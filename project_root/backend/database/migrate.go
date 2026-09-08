@@ -211,6 +211,8 @@ var alterStatements = []string{
 	`ALTER TABLE expenses ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE expenses ADD COLUMN payment_notes TEXT NULL`,
 	`CREATE INDEX idx_chat_messages_conversation_created ON chat_messages (conversation_id, created_at, id)`,
+	`ALTER TABLE workspaces ADD COLUMN focus_areas JSON NULL`,
+	`UPDATE workspaces SET focus_areas = '["planning","finances"]' WHERE focus_areas IS NULL`,
 }
 
 func Migrate(db *sql.DB) error {

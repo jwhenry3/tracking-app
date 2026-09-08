@@ -1,8 +1,11 @@
+export type WorkspaceFocusArea = 'planning' | 'finances'
+
 export type Workspace = {
   id: number
   name: string
   slug: string
   role: string
+  focus_areas: WorkspaceFocusArea[]
 }
 
 export type CreateWorkspaceResult = {

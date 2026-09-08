@@ -49,7 +49,10 @@ function App() {
         <Route path="planner/daily" element={<PlannerView mode="daily" />} />
         <Route path="planner/weekly" element={<PlannerView mode="weekly" />} />
         <Route path="planner/monthly" element={<PlannerView mode="monthly" />} />
-        <Route path="finances" element={<FinancesView />} />
+        <Route path="finances" element={<Navigate to="runway" replace />} />
+        <Route path="finances/runway" element={<FinancesView view="runway" />} />
+        <Route path="finances/timeline" element={<FinancesView view="timeline" />} />
+        <Route path="finances/analytics" element={<FinancesView view="analytics" />} />
         <Route path="todos" element={<TodosView />} />
         <Route path="chat" element={<ChatView />} />
       </Route>

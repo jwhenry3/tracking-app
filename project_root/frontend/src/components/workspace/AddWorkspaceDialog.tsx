@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { CreateWorkspaceResult } from '@/lib/types'
+import type { CreateWorkspaceResult, WorkspaceFocusArea } from '@/lib/types'
+import { defaultWorkspaceFocusAreas, WORKSPACE_FOCUS_OPTIONS } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
 
 type AddWorkspaceDialogProps = {
@@ -18,8 +19,15 @@ export function AddWorkspaceDialog({ open, onOpenChange, onComplete }: AddWorksp
   const createWorkspace = useAuthStore((s) => s.createWorkspace)
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
+  const [focusAreas, setFocusAreas] = useState<WorkspaceFocusArea[]>(defaultWorkspaceFocusAreas())
   const [feedback, setFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  function toggleFocusArea(area: WorkspaceFocusArea) {
+    setFocusAreas((current) =>
+      current.includes(area) ? current.filter((value) => value !== area) : [...current, area],
+    )
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -29,7 +37,7 @@ export function AddWorkspaceDialog({ open, onOpenChange, onComplete }: AddWorksp
     setLoading(true)
     setFeedback(null)
     try {
-      const result = await createWorkspace(trimmed, message.trim() || undefined)
+      const result = await createWorkspace(trimmed, message.trim() || undefined, focusAreas)
       if (result.status === 'created') {
         setFeedback(`Created ${result.workspace.name}.`)
       } else if (result.status === 'already_member') {
@@ -59,6 +67,7 @@ export function AddWorkspaceDialog({ open, onOpenChange, onComplete }: AddWorksp
           setFeedback(null)
           setName('')
           setMessage('')
+          setFocusAreas(defaultWorkspaceFocusAreas())
         }
       }}
       title="Add workspace"
@@ -84,6 +93,28 @@ export function AddWorkspaceDialog({ open, onOpenChange, onComplete }: AddWorksp
             placeholder="Hi, I'd like to join this workspace."
             rows={3}
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Areas of focus</Label>
+          <div className="space-y-2">
+            {WORKSPACE_FOCUS_OPTIONS.map((option) => (
+              <label
+                key={option.id}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={focusAreas.includes(option.id)}
+                  onChange={() => toggleFocusArea(option.id)}
+                />
+                <span>
+                  <span className="block text-sm font-medium">{option.label}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </div>
         {feedback ? <p className="text-sm text-muted-foreground">{feedback}</p> : null}
         <Button type="submit" className="w-full" disabled={loading}>

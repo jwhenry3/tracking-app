@@ -12,6 +12,7 @@ import type {
   TodoList,
   Workspace,
   WorkspaceAccessRequest,
+  WorkspaceFocusArea,
   WorkspaceInvite,
   WorkspaceMember,
 } from '@/lib/types'
@@ -74,11 +75,28 @@ export async function fetchWorkspaces(token: string) {
   return request<{ workspaces: Workspace[] }>('/api/workspaces', {}, token)
 }
 
-export async function createWorkspace(token: string, name: string, message?: string) {
+export async function createWorkspace(
+  token: string,
+  name: string,
+  message?: string,
+  focusAreas?: WorkspaceFocusArea[],
+) {
   return request<CreateWorkspaceResult>('/api/workspaces', {
     method: 'POST',
-    body: JSON.stringify({ name, message }),
+    body: JSON.stringify({ name, message, focus_areas: focusAreas }),
   }, token)
+}
+
+export async function updateWorkspaceSettings(
+  token: string,
+  workspaceId: number,
+  focusAreas: WorkspaceFocusArea[],
+) {
+  return request<Workspace>(
+    `/api/workspaces/${workspaceId}/settings`,
+    { method: 'PATCH', body: JSON.stringify({ focus_areas: focusAreas }) },
+    token,
+  )
 }
 
 export async function fetchWorkspaceMembers(token: string, workspaceId: number) {

@@ -9,7 +9,6 @@ import { PayExpenseDialog } from '@/components/finance/PayExpenseDialog'
 import { UntilNextIncomeView } from '@/components/finance/UntilNextIncomeView'
 import { FormField } from '@/components/forms/FormField'
 import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
-import { MaterialTabs } from '@/components/layout/MaterialTabs'
 import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderIconButton } from '@/components/layout/PageHeader'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
@@ -33,13 +32,7 @@ import { useRealtimeStore } from '@/stores/realtimeStore'
 type FinanceFormTab = 'income' | 'bill' | 'expense'
 type FinancePageView = 'runway' | 'timeline' | 'analytics'
 
-const pageTabs = [
-  { id: 'runway', label: 'Until next income' },
-  { id: 'timeline', label: 'Timeline' },
-  { id: 'analytics', label: 'Analytics' },
-] as const
-
-export function FinancesView() {
+export function FinancesView({ view: pageView }: { view: FinancePageView }) {
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
   const setOnUpdate = useRealtimeStore((s) => s.setOnUpdate)
@@ -50,7 +43,6 @@ export function FinancesView() {
   const [income, setIncome] = useState<IncomeEntry[]>([])
   const [bills, setBills] = useState<Bill[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
-  const [pageView, setPageView] = useState<FinancePageView>('runway')
   const [formTab, setFormTab] = useState<FinanceFormTab>('income')
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -191,15 +183,9 @@ export function FinancesView() {
           icon={Wallet}
           title="Finances"
           subtitle="Plan between paychecks, review the month, and track trends"
-          className="border-b-0"
         >
           <PageHeaderIconButton icon={Plus} label="Add entry" onClick={() => startAdd('income')} />
         </PageHeader>
-        <MaterialTabs
-          tabs={[...pageTabs]}
-          activeTab={pageView}
-          onChange={(tabId) => setPageView(tabId as FinancePageView)}
-        />
       </div>
 
       <div className="space-y-6 p-4">

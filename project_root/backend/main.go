@@ -68,6 +68,7 @@ func main() {
 		ws := api.Group("/workspaces/:workspaceId", middleware.JWTAuth(cfg.JWTSecret), middleware.WorkspaceAccess(db))
 		{
 			ws.GET("", workspaceHandler.Get)
+			ws.PATCH("/settings", workspaceHandler.UpdateSettings)
 			ws.GET("/members", workspaceHandler.ListMembers)
 			ws.POST("/members", workspaceHandler.AddMember)
 			ws.POST("/invites", workspaceHandler.InviteMember)

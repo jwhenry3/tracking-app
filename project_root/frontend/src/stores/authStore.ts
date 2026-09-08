@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import { createWorkspace, fetchMe, fetchWorkspaces, login as loginRequest, register as registerRequest } from '@/lib/api'
-import type { CreateWorkspaceResult, Workspace } from '@/lib/types'
+import type { CreateWorkspaceResult, Workspace, WorkspaceFocusArea } from '@/lib/types'
 
 type AuthState = {
   token: string | null
@@ -15,7 +15,8 @@ type AuthState = {
   register: (username: string, password: string, workspaceName?: string) => Promise<void>
   hydrate: () => Promise<void>
   loadWorkspaces: () => Promise<void>
-  createWorkspace: (name: string, message?: string) => Promise<CreateWorkspaceResult>
+  createWorkspace: (name: string, message?: string, focusAreas?: WorkspaceFocusArea[]) => Promise<CreateWorkspaceResult>
+  updateWorkspace: (workspace: Workspace) => void
   setActiveWorkspace: (workspaceId: number) => void
   logout: () => void
   clearError: () => void
@@ -88,20 +89,28 @@ export const useAuthStore = create<AuthState>()(
         set({ workspaces: data.workspaces, activeWorkspaceId: nextActive })
       },
 
-      createWorkspace: async (name, message) => {
+      createWorkspace: async (name, message, focusAreas) => {
         const { token } = get()
         if (!token) throw new Error('Not authenticated')
 
-        const result = await createWorkspace(token, name, message)
+        const result = await createWorkspace(token, name, message, focusAreas)
         if (result.status === 'created' || result.status === 'already_member') {
           set((state) => ({
             workspaces: state.workspaces.some((ws) => ws.id === result.workspace.id)
-              ? state.workspaces
+              ? state.workspaces.map((ws) =>
+                  ws.id === result.workspace.id ? result.workspace : ws,
+                )
               : [...state.workspaces, result.workspace],
             activeWorkspaceId: result.workspace.id,
           }))
         }
         return result
+      },
+
+      updateWorkspace: (workspace) => {
+        set((state) => ({
+          workspaces: state.workspaces.map((ws) => (ws.id === workspace.id ? workspace : ws)),
+        }))
       },
 
       setActiveWorkspace: (workspaceId) => set({ activeWorkspaceId: workspaceId }),

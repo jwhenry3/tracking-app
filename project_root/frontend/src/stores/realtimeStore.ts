@@ -10,9 +10,15 @@ type RealtimeState = {
   disconnect: (connectionId?: number) => void
   onUpdate: ((payload: unknown) => void) | null
   setOnUpdate: (handler: ((payload: unknown) => void) | null) => void
+  subscribe: (handler: (payload: unknown) => void) => () => void
 }
 
 let nextConnectionId = 0
+const updateSubscribers = new Set<(payload: unknown) => void>()
+
+function notifyUpdateSubscribers(payload: unknown) {
+  updateSubscribers.forEach((handler) => handler(payload))
+}
 
 function closeSocket(socket: WebSocket) {
   socket.onopen = null
@@ -31,6 +37,13 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   onUpdate: null,
 
   setOnUpdate: (handler) => set({ onUpdate: handler }),
+
+  subscribe: (handler) => {
+    updateSubscribers.add(handler)
+    return () => {
+      updateSubscribers.delete(handler)
+    }
+  },
 
   connect: (token, workspaceId) => {
     const { socket: existing } = get()
@@ -54,6 +67,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       try {
         const payload = JSON.parse(event.data)
         get().onUpdate?.(payload)
+        notifyUpdateSubscribers(payload)
       } catch {
         // ignore malformed payloads
       }

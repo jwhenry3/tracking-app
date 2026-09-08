@@ -2,7 +2,8 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { MessageSquare, UserPlus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { OperationDialog } from '@/components/layout/OperationDialog'
+import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
+import { WorkspaceSettings } from '@/components/workspace/WorkspaceSettings'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,8 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
   const [inviteUsername, setInviteUsername] = useState('')
   const [feedback, setFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'members' | 'settings'>('members')
+  const canManageSettings = workspace?.role === 'owner'
 
   async function loadPanelData() {
     if (!token || !workspace) return
@@ -50,6 +53,12 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
     setRequests(requestData.requests)
     setInvites(inviteData.invites)
   }
+
+  useEffect(() => {
+    if (!open) {
+      setActiveTab('members')
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open || !workspace) return
@@ -114,8 +123,20 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
       open={open}
       onOpenChange={onOpenChange}
       title={workspace.name}
-      description="Members, invites, and access requests for this workspace."
+      description="Members, invites, and workspace settings."
     >
+      <OpsTabs
+        tabs={[
+          { id: 'members', label: 'Members' },
+          ...(canManageSettings ? [{ id: 'settings', label: 'Settings' }] : []),
+        ]}
+        activeTab={activeTab}
+        onChange={(tabId) => setActiveTab(tabId as 'members' | 'settings')}
+      />
+
+      {activeTab === 'settings' && canManageSettings ? <WorkspaceSettings workspace={workspace} /> : null}
+
+      {activeTab === 'members' ? (
       <div className="space-y-6">
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -210,6 +231,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
 
         {feedback ? <p className="text-sm text-muted-foreground">{feedback}</p> : null}
       </div>
+      ) : null}
     </OperationDialog>
   )
 }
