@@ -1,0 +1,16 @@
+# Backend
+backend/.env
+backend/server.exe
+backend/tmp/
+
+# Root
+node_modules/
+
+# Frontend
+frontend/node_modules
+frontend/dist
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
