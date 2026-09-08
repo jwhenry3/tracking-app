@@ -68,7 +68,7 @@ const navSections: NavSection[] = [
     items: [
       { to: 'planner/daily', label: 'Daily', icon: LayoutGrid },
       { to: 'planner/weekly', label: 'Weekly', icon: CalendarRange },
-      { to: 'check-lists', label: 'Check lists & notes', icon: CheckSquare },
+      { to: 'check-lists', label: 'Task list', icon: CheckSquare },
     ],
   },
   {
@@ -102,6 +102,11 @@ function workspaceInitials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('')
+}
+
+function workspaceRouteSuffix(pathname: string) {
+  const match = pathname.match(/^\/w\/\d+\/(.*)$/)
+  return match?.[1] ?? 'calendar'
 }
 
 export function AppShell() {
@@ -144,9 +149,9 @@ export function AppShell() {
     }))
   }
 
-  const currentWorkspace =
-    workspaces.find((ws) => ws.id === Number(workspaceId)) ??
-    workspaces.find((ws) => ws.id === activeWorkspaceId)
+  const currentWorkspace = workspaceId
+    ? workspaces.find((ws) => ws.id === Number(workspaceId))
+    : workspaces.find((ws) => ws.id === activeWorkspaceId)
 
   const navWorkspace =
     currentWorkspace ??
@@ -209,6 +214,30 @@ export function AppShell() {
       syncCalendarWorkspaces(workspaceIds)
     }
   }, [isCentralCalendar, workspaceIds, syncCalendarWorkspaces])
+
+  useEffect(() => {
+    if (isCentralCalendar || !workspaceId || workspaces.length === 0) return
+
+    const numericWorkspaceId = Number(workspaceId)
+    if (Number.isNaN(numericWorkspaceId)) return
+
+    const workspace = workspaces.find((ws) => ws.id === numericWorkspaceId)
+    if (!workspace) {
+      navigate('/calendar', { replace: true })
+      return
+    }
+
+    if (activeWorkspaceId !== numericWorkspaceId) {
+      setActiveWorkspace(numericWorkspaceId)
+    }
+  }, [
+    isCentralCalendar,
+    workspaceId,
+    workspaces,
+    activeWorkspaceId,
+    setActiveWorkspace,
+    navigate,
+  ])
 
   useEffect(() => {
     if (isCentralCalendar || !workspaceId || !currentWorkspace) return
@@ -276,13 +305,15 @@ export function AppShell() {
   }
 
   function handleWorkspaceClick(workspace: (typeof workspaces)[number]) {
-    if (Number(workspaceId) === workspace.id) {
+    if (Number(workspaceId) === workspace.id && !isCentralCalendar) {
       setWorkspacePanelOpen(true)
       setMobileNavOpen(false)
       return
     }
+
     setActiveWorkspace(workspace.id)
-    navigate(`/w/${workspace.id}/calendar`)
+    const suffix = isCentralCalendar ? 'calendar' : workspaceRouteSuffix(location.pathname)
+    navigate(`/w/${workspace.id}/${suffix}`)
   }
 
   function handleLogout() {
@@ -521,7 +552,7 @@ export function AppShell() {
             <RealtimeQuerySync />
             <RealtimeToastSync />
             <DueDateToastSync />
-            <Outlet />
+            <Outlet key={workspaceId ?? location.pathname} />
           </main>
         </div>
 

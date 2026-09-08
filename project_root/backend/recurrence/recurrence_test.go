@@ -55,6 +55,41 @@ func TestExpandSeriesLegacyNormalizedRule(t *testing.T) {
 	}
 }
 
+func TestExpandSeriesWeeklyOnQueryDay(t *testing.T) {
+	series := Series{
+		ID:       1,
+		StartAt:  time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+		RRule:    "FREQ=WEEKLY;BYDAY=MO",
+		DateOnly: true,
+	}
+	from := time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 1, 12, 23, 59, 59, 0, time.UTC)
+
+	occurrences := ExpandSeries(series, from, to, nil)
+	if len(occurrences) != 1 {
+		t.Fatalf("expected 1 weekly occurrence, got %d: %v", len(occurrences), occurrences)
+	}
+	if occurrences[0].Format("2006-01-02") != "2026-01-12" {
+		t.Fatalf("expected occurrence on 2026-01-12, got %v", occurrences[0])
+	}
+}
+
+func TestExpandSeriesDailyAcrossTimezones(t *testing.T) {
+	series := Series{
+		ID:       2,
+		StartAt:  time.Date(2026, 3, 1, 0, 0, 0, 0, time.FixedZone("CST", -6*60*60)),
+		RRule:    "FREQ=DAILY",
+		DateOnly: true,
+	}
+	from := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 3, 15, 23, 59, 59, 0, time.UTC)
+
+	occurrences := ExpandSeries(series, from, to, nil)
+	if len(occurrences) != 1 {
+		t.Fatalf("expected 1 daily occurrence, got %d: %v", len(occurrences), occurrences)
+	}
+}
+
 func TestAdjustToPreviousWeekday(t *testing.T) {
 	saturday := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
 	friday := AdjustToPreviousWeekday(saturday)
@@ -66,5 +101,51 @@ func TestAdjustToPreviousWeekday(t *testing.T) {
 	adjusted := AdjustToPreviousWeekday(sunday)
 	if adjusted.Weekday() != time.Friday || adjusted.Day() != 13 {
 		t.Fatalf("expected Friday the 13th, got %v", adjusted)
+	}
+}
+
+func TestWeekStartUTC(t *testing.T) {
+	wednesday := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
+	got := WeekStartUTC(wednesday)
+	want := time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("expected week start %v, got %v", want, got)
+	}
+}
+
+func TestIsWeeklyChecklistScope(t *testing.T) {
+	if !IsWeeklyChecklistScope(WeeklyChecklistRule) {
+		t.Fatal("expected weekly checklist rule to match scope")
+	}
+	if IsWeeklyChecklistScope("FREQ=DAILY") {
+		t.Fatal("daily rule should not match weekly scope")
+	}
+}
+
+func TestParsePeriodScope(t *testing.T) {
+	week, ok := ParsePeriodScope(PeriodicChecklistRule("week"))
+	if !ok || week != "week" {
+		t.Fatalf("expected week scope, got %q ok=%v", week, ok)
+	}
+	month, ok := ParsePeriodScope(PeriodicChecklistRule("month"))
+	if !ok || month != "month" {
+		t.Fatalf("expected month scope, got %q ok=%v", month, ok)
+	}
+	year, ok := ParsePeriodScope(PeriodicChecklistRule("year"))
+	if !ok || year != "year" {
+		t.Fatalf("expected year scope, got %q ok=%v", year, ok)
+	}
+}
+
+func TestPeriodStartUTC(t *testing.T) {
+	day := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
+	if got := PeriodStartUTC(day, "week").Format("2006-01-02"); got != "2026-03-08" {
+		t.Fatalf("expected week start 2026-03-08, got %s", got)
+	}
+	if got := PeriodStartUTC(day, "month").Format("2006-01-02"); got != "2026-03-01" {
+		t.Fatalf("expected month start 2026-03-01, got %s", got)
+	}
+	if got := PeriodStartUTC(day, "year").Format("2006-01-02"); got != "2026-01-01" {
+		t.Fatalf("expected year start 2026-01-01, got %s", got)
 	}
 }

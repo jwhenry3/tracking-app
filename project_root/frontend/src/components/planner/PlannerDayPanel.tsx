@@ -12,12 +12,11 @@ import type { Bill, Expense } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useWorkspacePermissions } from '@/lib/workspacePermissions'
 
-type PlannerDayPanelTab = 'events' | 'checklists' | 'notes'
+type PlannerDayPanelTab = 'events' | 'checklists'
 
 const plannerDayPanelTabs: Array<{ id: PlannerDayPanelTab; label: string }> = [
   { id: 'events', label: 'Events' },
-  { id: 'checklists', label: 'Check lists' },
-  { id: 'notes', label: 'Notes' },
+  { id: 'checklists', label: 'Task list' },
 ]
 
 type PlannerDayPanelProps = {
@@ -141,15 +140,6 @@ export function PlannerDayPanel({
                 workspaceId={workspaceId}
                 date={day}
                 showCheckLists={checkListsVisible}
-                section="checklists"
-              />
-            ) : null}
-            {activeTab === 'notes' ? (
-              <PlannerDayItems
-                token={token}
-                workspaceId={workspaceId}
-                date={day}
-                section="notes"
               />
             ) : null}
           </>

@@ -19,8 +19,8 @@ export function CheckListToggleButton({ visible, label, onToggle }: CheckListTog
         'h-8 w-8 shrink-0 p-0',
         visible ? 'text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground',
       )}
-      title={visible ? `Hide check list for ${label}` : `Show check list for ${label}`}
-      aria-label={visible ? `Hide check list for ${label}` : `Show check list for ${label}`}
+      title={visible ? `Hide task list for ${label}` : `Show task list for ${label}`}
+      aria-label={visible ? `Hide task list for ${label}` : `Show task list for ${label}`}
       aria-pressed={visible}
       onClick={onToggle}
     >

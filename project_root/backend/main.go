@@ -114,6 +114,7 @@ func main() {
 
 			ws.GET("/todo-lists", todoHandler.ListLists)
 			ws.POST("/todo-lists", todoHandler.CreateList)
+			ws.PATCH("/todo-lists/:listId", todoHandler.UpdateList)
 			ws.DELETE("/todo-lists/:listId", todoHandler.DeleteList)
 			ws.GET("/todo-lists/daily/:date", todoHandler.EnsureDailyList)
 			ws.GET("/todos", todoHandler.ListTodos)

@@ -692,7 +692,7 @@ export async function fetchTodoLists(token: string, workspaceId: number, date?: 
 }
 
 export async function ensureDailyList(token: string, workspaceId: number, date: string) {
-  return request<{ list_id: number; date: string }>(
+  return request<{ list_id: number | null; date: string }>(
     `/api/workspaces/${workspaceId}/todo-lists/daily/${date}`,
     {},
     token,
@@ -702,11 +702,24 @@ export async function ensureDailyList(token: string, workspaceId: number, date: 
 export async function createTodoList(
   token: string,
   workspaceId: number,
-  payload: { name: string; kind?: string; list_date?: string; recurrence?: string },
+  payload: { name: string; kind?: string; list_date?: string; recurrence?: string; period_scope?: string },
 ) {
   return request<TodoList>(
     `/api/workspaces/${workspaceId}/todo-lists`,
     { method: 'POST', body: JSON.stringify(payload) },
+    token,
+  )
+}
+
+export async function updateTodoList(
+  token: string,
+  workspaceId: number,
+  listId: number,
+  payload: { name: string; kind?: string; list_date?: string; recurrence?: string; period_scope?: string },
+) {
+  return request<TodoList>(
+    `/api/workspaces/${workspaceId}/todo-lists/${listId}`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
     token,
   )
 }

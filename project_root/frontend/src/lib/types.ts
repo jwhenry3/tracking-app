@@ -205,15 +205,18 @@ export type FinanceSummary = {
   net: number
 }
 
+export type PeriodScope = 'week' | 'month' | 'year'
+
 export type TodoList = {
   id: number
   workspace_id: number
   name: string
-  kind: 'daily' | 'general' | 'series'
+  kind: 'daily' | 'periodic' | 'weekly' | 'general' | 'series'
   list_date?: string | null
   recurrence?: string
   is_recurring?: boolean
   series_id?: number | null
+  period_scope?: PeriodScope | null
 }
 
 export type Todo = {

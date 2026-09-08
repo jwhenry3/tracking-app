@@ -17,6 +17,9 @@ const EntityTodoList = "todo_list"
 const ActionCancelled = "cancelled"
 const ActionModified = "modified"
 
+// WeeklyChecklistRule is kept for backward compatibility with existing series rows.
+const WeeklyChecklistRule = "FREQ=WEEKLY;INTERVAL=1;SCOPE=WEEK"
+
 type Exception struct {
 	OccurrenceAt time.Time
 	Action       string
@@ -66,6 +69,75 @@ func IsRecurring(rule string) bool {
 	return NormalizeRule(rule) != ""
 }
 
+func IsWeeklyChecklistScope(rule string) bool {
+	scope, ok := ParsePeriodScope(rule)
+	return ok && scope == "week"
+}
+
+func IsPeriodicChecklistScope(rule string) bool {
+	_, ok := ParsePeriodScope(rule)
+	return ok
+}
+
+func ParsePeriodScope(rule string) (string, bool) {
+	rule = strings.ToUpper(NormalizeRule(rule))
+	for _, scope := range []string{"WEEK", "MONTH", "YEAR"} {
+		if strings.Contains(rule, "SCOPE="+scope) {
+			return strings.ToLower(scope), true
+		}
+	}
+	return "", false
+}
+
+func PeriodicChecklistRule(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "month":
+		return "FREQ=MONTHLY;INTERVAL=1;SCOPE=MONTH"
+	case "year":
+		return "FREQ=YEARLY;INTERVAL=1;SCOPE=YEAR"
+	default:
+		return WeeklyChecklistRule
+	}
+}
+
+// PeriodStartUTC returns the start of the calendar period containing value.
+func PeriodStartUTC(value time.Time, scope string) time.Time {
+	day := dateOnlyUTC(value)
+	switch strings.ToLower(scope) {
+	case "month":
+		return time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, time.UTC)
+	case "year":
+		return time.Date(day.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return WeekStartUTC(day)
+	}
+}
+
+// PeriodStartFromISODate parses YYYY-MM-DD and returns the period start in UTC.
+func PeriodStartFromISODate(raw, scope string) (time.Time, error) {
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return PeriodStartUTC(parsed, scope), nil
+}
+
+// WeekStartUTC returns the Sunday that starts the calendar week containing value.
+func WeekStartUTC(value time.Time) time.Time {
+	day := dateOnlyUTC(value)
+	offset := int(day.Weekday())
+	return day.AddDate(0, 0, -offset)
+}
+
+// WeekStartFromISODate parses YYYY-MM-DD and returns the Sunday week start in UTC.
+func WeekStartFromISODate(raw string) (time.Time, error) {
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return WeekStartUTC(parsed), nil
+}
+
 func OccurrenceID(seriesID int, occurrenceAt time.Time, dateOnly bool) string {
 	if dateOnly {
 		return formatDateKey(seriesID, occurrenceAt)
@@ -93,6 +165,12 @@ func ParseOccurrenceID(raw string) (seriesID int, occurrenceAt time.Time, ok boo
 }
 
 func ExpandSeries(series Series, from, to time.Time, exceptions []Exception) []time.Time {
+	if series.DateOnly {
+		from = dateOnlyUTC(from)
+		to = dateOnlyEndUTC(to)
+		series.StartAt = dateOnlyUTC(series.StartAt)
+	}
+
 	rule := NormalizeRule(series.RRule)
 	if rule == "" {
 		if !series.StartAt.Before(from) && !series.StartAt.After(to) {
@@ -251,6 +329,9 @@ func stripExtensions(rule string) (string, bool) {
 			}
 			continue
 		}
+		if upper == "SCOPE=WEEK" || upper == "SCOPE=MONTH" || upper == "SCOPE=YEAR" {
+			continue
+		}
 		if part != "" {
 			filtered = append(filtered, part)
 		}
@@ -333,4 +414,23 @@ func (e *timeParseError) Error() string { return "empty time" }
 
 func formatInt(value int) string {
 	return strconv.Itoa(value)
+}
+
+func dateOnlyUTC(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func dateOnlyEndUTC(value time.Time) time.Time {
+	day := dateOnlyUTC(value)
+	return day.AddDate(0, 0, 1).Add(-time.Second)
+}
+
+// DateOnlyUTC normalizes a timestamp to midnight UTC on its calendar date.
+func DateOnlyUTC(value time.Time) time.Time {
+	return dateOnlyUTC(value)
+}
+
+// DateOnlyEndUTC returns the last second of the calendar date in UTC.
+func DateOnlyEndUTC(value time.Time) time.Time {
+	return dateOnlyEndUTC(value)
 }

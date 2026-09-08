@@ -23,6 +23,35 @@ export function toLocalIsoDate(date: Date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
+/** Sunday-based week start for the calendar date (YYYY-MM-DD). */
+export function weekStartIsoDate(date: string | Date) {
+  const parsed =
+    typeof date === 'string'
+      ? new Date(`${normalizeFinanceDate(date) ?? date}T12:00:00`)
+      : new Date(date)
+  const start = new Date(parsed)
+  start.setDate(parsed.getDate() - parsed.getDay())
+  return toLocalIsoDate(start)
+}
+
+/** First day of the calendar month (YYYY-MM-01). */
+export function monthStartIsoDate(date: string | Date) {
+  const parsed =
+    typeof date === 'string'
+      ? new Date(`${normalizeFinanceDate(date) ?? date}T12:00:00`)
+      : new Date(date)
+  return toLocalIsoDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1))
+}
+
+/** First day of the calendar year (YYYY-01-01). */
+export function yearStartIsoDate(date: string | Date) {
+  const parsed =
+    typeof date === 'string'
+      ? new Date(`${normalizeFinanceDate(date) ?? date}T12:00:00`)
+      : new Date(date)
+  return toLocalIsoDate(new Date(parsed.getFullYear(), 0, 1))
+}
+
 export function isInRange(iso: string, start: string, end: string) {
   const day = iso.slice(0, 10)
   return day >= start.slice(0, 10) && day <= end.slice(0, 10)

@@ -57,7 +57,7 @@ export function WorkspaceOnboardingPage() {
     setInviteBusyId(inviteId)
     setError(null)
     try {
-      const result = await acceptInvite(token, inviteId)
+      await acceptInvite(token, inviteId)
       await loadWorkspaces()
       navigate('/calendar')
     } catch (err) {

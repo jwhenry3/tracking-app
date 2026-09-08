@@ -3,7 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"fullstack-app/hub"
@@ -27,6 +29,7 @@ type todoListPayload struct {
 	Recurrence  string  `json:"recurrence"`
 	IsRecurring bool    `json:"is_recurring"`
 	SeriesID    *int    `json:"series_id"`
+	PeriodScope string  `json:"period_scope"`
 }
 
 type todoSeriesRow struct {
@@ -59,10 +62,11 @@ type notePayload struct {
 }
 
 type createListRequest struct {
-	Name       string `json:"name" binding:"required"`
-	Kind       string `json:"kind"`
-	ListDate   string `json:"list_date"`
-	Recurrence string `json:"recurrence"`
+	Name        string `json:"name" binding:"required"`
+	Kind        string `json:"kind"`
+	ListDate    string `json:"list_date"`
+	Recurrence  string `json:"recurrence"`
+	PeriodScope string `json:"period_scope"`
 }
 
 type createTodoRequest struct {
@@ -93,7 +97,7 @@ func (h *TodoHandler) ListLists(c *gin.Context) {
 
 	if listDate != "" {
 		if err := h.ensureSeriesInstancesForDate(workspaceID.(int), listDate); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare daily lists"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare check lists"})
 			return
 		}
 	}
@@ -107,8 +111,33 @@ func (h *TodoHandler) ListLists(c *gin.Context) {
 	args := []any{workspaceID}
 
 	if listDate != "" {
-		query += " AND (tl.kind = 'general' OR tl.list_date = ?)"
-		args = append(args, listDate)
+		weekStart, err := recurrence.PeriodStartFromISODate(listDate, "week")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date"})
+			return
+		}
+		monthStart, err := recurrence.PeriodStartFromISODate(listDate, "month")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date"})
+			return
+		}
+		yearStart, err := recurrence.PeriodStartFromISODate(listDate, "year")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date"})
+			return
+		}
+		query += ` AND (
+			tl.kind = 'general'
+			OR (tl.kind = 'daily' AND tl.list_date = ?)
+			OR (tl.kind IN ('periodic', 'weekly') AND tl.list_date IN (?, ?, ?))
+		)`
+		args = append(
+			args,
+			listDate,
+			weekStart.Format("2006-01-02"),
+			monthStart.Format("2006-01-02"),
+			yearStart.Format("2006-01-02"),
+		)
 	}
 	query += " ORDER BY tl.kind ASC, tl.list_date DESC, tl.name ASC"
 
@@ -145,7 +174,37 @@ func (h *TodoHandler) CreateList(c *gin.Context) {
 	}
 
 	rrule := recurrence.NormalizeRule(req.Recurrence)
+	periodScope := normalizePeriodScope(req.PeriodScope, req.Kind)
+	if periodScope != "" {
+		anchor := req.ListDate
+		if anchor == "" {
+			anchor = time.Now().Format("2006-01-02")
+		}
+		periodStart, err := recurrence.PeriodStartFromISODate(anchor, periodScope)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid list_date"})
+			return
+		}
+		list, err := h.createPeriodicSeries(
+			workspaceID.(int),
+			req.Name,
+			periodStart.Format("2006-01-02"),
+			periodScope,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create periodic check list"})
+			return
+		}
+		h.broadcastTodo(workspaceID.(int), "todo_list", "created", list)
+		c.JSON(http.StatusCreated, list)
+		return
+	}
+
 	if recurrence.IsRecurring(rrule) {
+		if recurrence.IsPeriodicChecklistScope(rrule) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "use periodic list type for week, month, or year scoped lists"})
+			return
+		}
 		if req.ListDate == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "list_date is required for recurring check lists"})
 			return
@@ -192,6 +251,69 @@ func (h *TodoHandler) CreateList(c *gin.Context) {
 
 	h.broadcastTodo(workspaceID.(int), "todo_list", "created", list)
 	c.JSON(http.StatusCreated, list)
+}
+
+type updateListRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Kind        string `json:"kind"`
+	ListDate    string `json:"list_date"`
+	Recurrence  string `json:"recurrence"`
+	PeriodScope string `json:"period_scope"`
+}
+
+type todoListRow struct {
+	ID       int
+	Kind     string
+	SeriesID sql.NullInt64
+	ListDate sql.NullTime
+	Name     string
+}
+
+func (h *TodoHandler) UpdateList(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+	workspaceID, _ := c.Get("workspaceID")
+	listID := c.Param("listId")
+
+	var req updateListRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	row, err := h.loadTodoListRow(workspaceID.(int), listID)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "todo list not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load todo list"})
+		return
+	}
+	if row.Kind == "series" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot edit series rows directly"})
+		return
+	}
+
+	var updated todoListPayload
+	if row.SeriesID.Valid {
+		updated, err = h.updateCheckListSeries(workspaceID.(int), int(row.SeriesID.Int64), row.ID, req)
+	} else {
+		updated, err = h.updateCheckListStandalone(workspaceID.(int), row, req)
+	}
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidListDate), errors.Is(err, errInvalidRecurrence), errors.Is(err, errUnsupportedListKind):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update todo list"})
+		}
+		return
+	}
+
+	h.broadcastTodo(workspaceID.(int), "todo_list", "updated", updated)
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *TodoHandler) DeleteList(c *gin.Context) {
@@ -279,28 +401,26 @@ func (h *TodoHandler) EnsureDailyList(c *gin.Context) {
 		return
 	}
 
-	var listID int
+	var listID sql.NullInt64
 	err := h.DB.QueryRow(`
 		SELECT id FROM todo_lists
-		WHERE workspace_id = ? AND kind = 'daily' AND list_date = ? AND series_id IS NULL`,
+		WHERE workspace_id = ? AND kind = 'daily' AND list_date = ? AND series_id IS NULL
+		ORDER BY id ASC LIMIT 1`,
 		workspaceID, date,
 	).Scan(&listID)
-	if err == sql.ErrNoRows {
-		result, insertErr := h.DB.Exec(`
-			INSERT INTO todo_lists (workspace_id, name, kind, list_date)
-			VALUES (?, ?, 'daily', ?)`, workspaceID, "Daily Plan", date)
-		if insertErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create daily list"})
-			return
-		}
-		id64, _ := result.LastInsertId()
-		listID = int(id64)
-	} else if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load daily list"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"list_id": listID, "date": date})
+	response := gin.H{"date": date}
+	if listID.Valid {
+		response["list_id"] = listID.Int64
+	} else {
+		response["list_id"] = nil
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *TodoHandler) ListTodos(c *gin.Context) {
@@ -596,6 +716,46 @@ func (h *TodoHandler) DeleteNote(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "note deleted"})
 }
 
+func (h *TodoHandler) createPeriodicSeries(workspaceID int, name, periodStart, scope string) (todoListPayload, error) {
+	rrule := recurrence.PeriodicChecklistRule(scope)
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return todoListPayload{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
+		INSERT INTO todo_lists (workspace_id, name, kind, list_date, recurrence)
+		VALUES (?, ?, 'series', ?, ?)`, workspaceID, name, periodStart, rrule)
+	if err != nil {
+		return todoListPayload{}, err
+	}
+	seriesID64, _ := result.LastInsertId()
+	seriesID := int(seriesID64)
+
+	instanceID, err := h.insertPeriodicInstanceTx(tx, workspaceID, seriesID, name, periodStart)
+	if err != nil {
+		return todoListPayload{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return todoListPayload{}, err
+	}
+
+	seriesIDRef := seriesID
+	return todoListPayload{
+		ID:          instanceID,
+		WorkspaceID: workspaceID,
+		Name:        name,
+		Kind:        "periodic",
+		ListDate:    &periodStart,
+		Recurrence:  rrule,
+		IsRecurring: true,
+		SeriesID:    &seriesIDRef,
+		PeriodScope: scope,
+	}, nil
+}
+
 func (h *TodoHandler) createRecurringSeries(workspaceID int, name, listDate, rrule string) (todoListPayload, error) {
 	tx, err := h.DB.Begin()
 	if err != nil {
@@ -634,6 +794,30 @@ func (h *TodoHandler) createRecurringSeries(workspaceID int, name, listDate, rru
 	}, nil
 }
 
+func (h *TodoHandler) insertPeriodicInstanceTx(tx *sql.Tx, workspaceID, seriesID int, name, periodStart string) (int, error) {
+	var existingID int
+	err := tx.QueryRow(`
+		SELECT id FROM todo_lists
+		WHERE workspace_id = ? AND series_id = ? AND kind IN ('periodic', 'weekly') AND list_date = ?`,
+		workspaceID, seriesID, periodStart,
+	).Scan(&existingID)
+	if err == nil {
+		return existingID, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	result, err := tx.Exec(`
+		INSERT INTO todo_lists (workspace_id, name, kind, list_date, series_id)
+		VALUES (?, ?, 'periodic', ?, ?)`, workspaceID, name, periodStart, seriesID)
+	if err != nil {
+		return 0, err
+	}
+	id64, _ := result.LastInsertId()
+	return int(id64), nil
+}
+
 func (h *TodoHandler) insertDailyInstanceTx(tx *sql.Tx, workspaceID, seriesID int, name, listDate string) (int, error) {
 	var existingID int
 	err := tx.QueryRow(`
@@ -663,6 +847,8 @@ func (h *TodoHandler) ensureSeriesInstancesForDate(workspaceID int, date string)
 	if err != nil {
 		return err
 	}
+	from := recurrence.DateOnlyUTC(day)
+	to := recurrence.DateOnlyEndUTC(day)
 
 	rows, err := h.DB.Query(`
 		SELECT id, workspace_id, name, list_date, COALESCE(recurrence, '')
@@ -695,13 +881,23 @@ func (h *TodoHandler) ensureSeriesInstancesForDate(workspaceID int, date string)
 		return err
 	}
 
-	from := day
-	to := day.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
-
 	for _, row := range seriesRows {
+		if scope, ok := recurrence.ParsePeriodScope(row.Recurrence); ok {
+			periodStart := recurrence.PeriodStartUTC(day, scope)
+			seriesPeriodStart := recurrence.PeriodStartUTC(row.ListDate, scope)
+			if periodStart.Before(seriesPeriodStart) {
+				continue
+			}
+			periodStartStr := periodStart.Format("2006-01-02")
+			if _, err := h.insertPeriodicInstance(h.DB, workspaceID, row.ID, row.Name, periodStartStr); err != nil {
+				return err
+			}
+			continue
+		}
+
 		series := recurrence.Series{
 			ID:       row.ID,
-			StartAt:  row.ListDate,
+			StartAt:  recurrence.DateOnlyUTC(row.ListDate),
 			RRule:    row.Recurrence,
 			DateOnly: true,
 		}
@@ -715,6 +911,30 @@ func (h *TodoHandler) ensureSeriesInstancesForDate(workspaceID int, date string)
 	}
 
 	return nil
+}
+
+func (h *TodoHandler) insertPeriodicInstance(db queryExecer, workspaceID, seriesID int, name, periodStart string) (int, error) {
+	var existingID int
+	err := db.QueryRow(`
+		SELECT id FROM todo_lists
+		WHERE workspace_id = ? AND series_id = ? AND kind IN ('periodic', 'weekly') AND list_date = ?`,
+		workspaceID, seriesID, periodStart,
+	).Scan(&existingID)
+	if err == nil {
+		return existingID, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	result, err := db.Exec(`
+		INSERT INTO todo_lists (workspace_id, name, kind, list_date, series_id)
+		VALUES (?, ?, 'periodic', ?, ?)`, workspaceID, name, periodStart, seriesID)
+	if err != nil {
+		return 0, err
+	}
+	id64, _ := result.LastInsertId()
+	return int(id64), nil
 }
 
 func (h *TodoHandler) insertDailyInstance(db queryExecer, workspaceID, seriesID int, name, listDate string) (int, error) {
@@ -766,8 +986,183 @@ func scanTodoListPayload(rows *sql.Rows) (todoListPayload, error) {
 	}
 	list.Recurrence = recurrence.NormalizeRule(recurrenceRule)
 	list.IsRecurring = recurrence.IsRecurring(list.Recurrence)
+	if scope, ok := recurrence.ParsePeriodScope(list.Recurrence); ok {
+		list.PeriodScope = scope
+	}
+	if list.Kind == "weekly" {
+		list.Kind = "periodic"
+		if list.PeriodScope == "" {
+			list.PeriodScope = "week"
+		}
+	}
 	return list, nil
 }
+
+func normalizePeriodScope(periodScope, kind string) string {
+	scope := strings.ToLower(strings.TrimSpace(periodScope))
+	if scope == "week" || scope == "month" || scope == "year" {
+		return scope
+	}
+	if strings.EqualFold(kind, "periodic") {
+		return "week"
+	}
+	if strings.EqualFold(kind, "weekly") {
+		return "week"
+	}
+	return ""
+}
+
+func (h *TodoHandler) loadTodoListRow(workspaceID int, listID string) (todoListRow, error) {
+	var row todoListRow
+	err := h.DB.QueryRow(`
+		SELECT id, kind, series_id, list_date, name
+		FROM todo_lists WHERE id = ? AND workspace_id = ?`, listID, workspaceID,
+	).Scan(&row.ID, &row.Kind, &row.SeriesID, &row.ListDate, &row.Name)
+	return row, err
+}
+
+func (h *TodoHandler) getListPayloadByID(workspaceID, listID int) (todoListPayload, error) {
+	row := h.DB.QueryRow(`
+		SELECT tl.id, tl.workspace_id, tl.name, tl.kind, tl.list_date, tl.series_id,
+			COALESCE(parent.recurrence, tl.recurrence, '')
+		FROM todo_lists tl
+		LEFT JOIN todo_lists parent ON parent.id = tl.series_id
+		WHERE tl.workspace_id = ? AND tl.id = ? AND tl.kind != 'series'`, workspaceID, listID)
+
+	var list todoListPayload
+	var listDate sql.NullTime
+	var seriesID sql.NullInt64
+	var recurrenceRule string
+	if err := row.Scan(
+		&list.ID, &list.WorkspaceID, &list.Name, &list.Kind, &listDate, &seriesID, &recurrenceRule,
+	); err != nil {
+		return todoListPayload{}, err
+	}
+	if listDate.Valid {
+		formatted := listDate.Time.Format("2006-01-02")
+		list.ListDate = &formatted
+	}
+	if seriesID.Valid {
+		id := int(seriesID.Int64)
+		list.SeriesID = &id
+	}
+	list.Recurrence = recurrence.NormalizeRule(recurrenceRule)
+	list.IsRecurring = recurrence.IsRecurring(list.Recurrence)
+	if scope, ok := recurrence.ParsePeriodScope(list.Recurrence); ok {
+		list.PeriodScope = scope
+	}
+	if list.Kind == "weekly" {
+		list.Kind = "periodic"
+		if list.PeriodScope == "" {
+			list.PeriodScope = "week"
+		}
+	}
+	return list, nil
+}
+
+func (h *TodoHandler) updateCheckListStandalone(workspaceID int, row todoListRow, req updateListRequest) (todoListPayload, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return todoListPayload{}, sql.ErrNoRows
+	}
+
+	switch row.Kind {
+	case "general":
+		_, err := h.DB.Exec(
+			`UPDATE todo_lists SET name = ? WHERE id = ? AND workspace_id = ?`,
+			name, row.ID, workspaceID,
+		)
+		if err != nil {
+			return todoListPayload{}, err
+		}
+	case "daily":
+		listDate := req.ListDate
+		if listDate == "" && row.ListDate.Valid {
+			listDate = row.ListDate.Time.Format("2006-01-02")
+		}
+		if listDate == "" {
+			return todoListPayload{}, errInvalidListDate
+		}
+		_, err := h.DB.Exec(
+			`UPDATE todo_lists SET name = ?, list_date = ? WHERE id = ? AND workspace_id = ?`,
+			name, listDate, row.ID, workspaceID,
+		)
+		if err != nil {
+			return todoListPayload{}, err
+		}
+	default:
+		return todoListPayload{}, errUnsupportedListKind
+	}
+
+	return h.getListPayloadByID(workspaceID, row.ID)
+}
+
+func (h *TodoHandler) updateCheckListSeries(workspaceID, seriesID, instanceID int, req updateListRequest) (todoListPayload, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return todoListPayload{}, sql.ErrNoRows
+	}
+
+	periodScope := normalizePeriodScope(req.PeriodScope, req.Kind)
+	rrule := recurrence.NormalizeRule(req.Recurrence)
+
+	var recurrenceRule string
+	var anchorDate string
+
+	switch {
+	case periodScope != "":
+		anchor := req.ListDate
+		if anchor == "" {
+			anchor = time.Now().Format("2006-01-02")
+		}
+		periodStart, err := recurrence.PeriodStartFromISODate(anchor, periodScope)
+		if err != nil {
+			return todoListPayload{}, err
+		}
+		recurrenceRule = recurrence.PeriodicChecklistRule(periodScope)
+		anchorDate = periodStart.Format("2006-01-02")
+	case recurrence.IsRecurring(rrule):
+		if req.ListDate == "" {
+			return todoListPayload{}, errInvalidListDate
+		}
+		recurrenceRule = rrule
+		anchorDate = req.ListDate
+	default:
+		return todoListPayload{}, errInvalidRecurrence
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return todoListPayload{}, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`UPDATE todo_lists SET name = ?, list_date = ?, recurrence = ? WHERE id = ? AND workspace_id = ? AND kind = 'series'`,
+		name, anchorDate, recurrenceRule, seriesID, workspaceID,
+	); err != nil {
+		return todoListPayload{}, err
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE todo_lists SET name = ? WHERE series_id = ? AND workspace_id = ?`,
+		name, seriesID, workspaceID,
+	); err != nil {
+		return todoListPayload{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return todoListPayload{}, err
+	}
+
+	return h.getListPayloadByID(workspaceID, instanceID)
+}
+
+var (
+	errInvalidListDate     = errors.New("invalid list_date")
+	errInvalidRecurrence   = errors.New("invalid recurrence schedule")
+	errUnsupportedListKind = errors.New("unsupported list kind")
+)
 
 func (h *TodoHandler) broadcastTodo(workspaceID int, entity, action string, payload any) {
 	raw, _ := json.Marshal(payload)

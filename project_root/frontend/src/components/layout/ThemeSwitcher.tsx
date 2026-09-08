@@ -67,7 +67,7 @@ export function ThemeSwitcher() {
         <ul
           role="listbox"
           aria-labelledby="theme-select-label"
-          className="absolute left-3 right-3 top-full z-20 mt-1 overflow-hidden rounded-lg border border-white/15 bg-[#25282d] py-1 shadow-lg"
+          className="absolute bottom-full left-3 right-3 z-20 mb-1 overflow-hidden rounded-lg border border-white/15 bg-[#25282d] py-1 shadow-lg"
         >
           {THEME_OPTIONS.map((option) => {
             const active = theme === option.id

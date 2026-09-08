@@ -4,7 +4,7 @@ export const WORKSPACE_FOCUS_OPTIONS = [
   {
     id: 'planning' as const,
     label: 'Planning',
-    description: 'Daily and weekly planners plus check lists and notes.',
+    description: 'Daily and weekly planners plus task lists.',
   },
   {
     id: 'finances' as const,

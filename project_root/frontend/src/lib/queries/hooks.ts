@@ -23,6 +23,7 @@ import {
   fetchWorkspaceMembers,
   fetchWorkspaces,
 } from '@/lib/api'
+import { isPeriodicList, listPeriodScope } from '@/lib/checklistPeriods'
 import { normalizeFinanceDate } from '@/lib/financeUtils'
 import { queryKeys } from '@/lib/queries/keys'
 import type { CalendarFocusFilter } from '@/lib/calendarFocusFilter'
@@ -240,33 +241,31 @@ export function usePlannerDayQuery(workspaceId: number | null, date: string, ena
     queryKey: queryKeys.plannerDay(workspaceId ?? 0, date),
     enabled: Boolean(token && workspaceId && date && enabled),
     queryFn: async () => {
-      const daily = await ensureDailyList(token!, workspaceId!, date)
       const listsResponse = await fetchTodoLists(token!, workspaceId!, date)
-      const dailyLists = listsResponse.lists.filter((list) => list.kind === 'daily')
+      const plannerLists = listsResponse.lists.filter(
+        (list) => list.kind === 'daily' || isPeriodicList(list),
+      )
 
       const listData = await Promise.all(
-        dailyLists.map(async (list) => {
-          const [checkListData, noteData] = await Promise.all([
-            fetchTodos(token!, workspaceId!, list.id),
-            fetchNotes(token!, workspaceId!, list.id),
-          ])
+        plannerLists.map(async (list) => {
+          const checkListData = await fetchTodos(token!, workspaceId!, list.id)
           return {
             id: list.id,
             name: list.name,
+            kind: list.kind,
+            periodScope: listPeriodScope(list),
             isRecurring: Boolean(list.is_recurring),
             items: checkListData.todos,
-            notes: noteData.notes,
           }
         }),
       )
 
-      const primaryList = listData.find((list) => list.id === daily.list_id) ?? listData[0]
+      const primaryList = listData[0]
 
       return {
-        dailyListId: daily.list_id,
+        dailyListId: primaryList?.id ?? null,
         dailyLists: listData,
         items: primaryList?.items ?? [],
-        notes: primaryList?.notes ?? [],
       }
     },
   })
