@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { CalendarView } from '@/views/CalendarView'
+import { ChatView } from '@/views/ChatView'
 import { FinancesView } from '@/views/FinancesView'
 import { PlannerView } from '@/views/PlannerView'
 import { TodosView } from '@/views/TodosView'
@@ -50,6 +51,7 @@ function App() {
         <Route path="planner/monthly" element={<PlannerView mode="monthly" />} />
         <Route path="finances" element={<FinancesView />} />
         <Route path="todos" element={<TodosView />} />
+        <Route path="chat" element={<ChatView />} />
       </Route>
       <Route path="/" element={<WorkspaceHome />} />
     </Routes>

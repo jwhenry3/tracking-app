@@ -228,6 +228,10 @@ func Seed(db *sql.DB) error {
 		}
 	}
 
+	if err := seedWorkspaceChat(tx, workspaceID, demoID, partnerID); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 

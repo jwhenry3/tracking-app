@@ -22,8 +22,12 @@ export function WorkspaceOnboardingPage() {
     setLoading(true)
     setError(null)
     try {
-      const workspace = await createWorkspace(trimmed)
-      navigate(`/w/${workspace.id}/calendar`)
+      const result = await createWorkspace(trimmed)
+      if (result.status === 'created' || result.status === 'already_member') {
+        navigate(`/w/${result.workspace.id}/calendar`)
+      } else {
+        setError(`Access request sent to members of ${result.workspace.name}.`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create workspace')
     } finally {
@@ -37,7 +41,7 @@ export function WorkspaceOnboardingPage() {
         <CardHeader>
           <CardTitle>Create your first workspace</CardTitle>
           <CardDescription>
-            Set up a shared space for your family or group before opening the planner.
+            Set up a shared space for your family or group. If the name already exists, members will be asked to approve your access.
           </CardDescription>
         </CardHeader>
         <CardContent>

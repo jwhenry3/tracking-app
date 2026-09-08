@@ -146,6 +146,56 @@ var migrationStatements = []string{
 		UNIQUE KEY uniq_recurrence_occurrence (entity_type, series_id, occurrence_at),
 		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 	)`,
+	`CREATE TABLE IF NOT EXISTS workspace_access_requests (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		workspace_id INT NOT NULL,
+		user_id INT NOT NULL,
+		message TEXT,
+		status VARCHAR(20) NOT NULL DEFAULT 'pending',
+		reviewed_by INT NULL,
+		reviewed_at TIMESTAMP NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uniq_workspace_access_request (workspace_id, user_id),
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+		FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS workspace_invites (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		workspace_id INT NOT NULL,
+		invitee_user_id INT NOT NULL,
+		invited_by INT NOT NULL,
+		status VARCHAR(20) NOT NULL DEFAULT 'pending',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uniq_workspace_invite (workspace_id, invitee_user_id),
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+		FOREIGN KEY (invitee_user_id) REFERENCES users(id) ON DELETE CASCADE,
+		FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS chat_conversations (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		workspace_id INT NOT NULL,
+		kind VARCHAR(20) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS chat_conversation_members (
+		conversation_id INT NOT NULL,
+		user_id INT NOT NULL,
+		joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (conversation_id, user_id),
+		FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS chat_messages (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		conversation_id INT NOT NULL,
+		sender_id INT NOT NULL,
+		content TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+		FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
 }
 
 var alterStatements = []string{
@@ -160,6 +210,7 @@ var alterStatements = []string{
 	`ALTER TABLE expenses ADD COLUMN paid_at DATE NULL`,
 	`ALTER TABLE expenses ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE expenses ADD COLUMN payment_notes TEXT NULL`,
+	`CREATE INDEX idx_chat_messages_conversation_created ON chat_messages (conversation_id, created_at, id)`,
 }
 
 func Migrate(db *sql.DB) error {
@@ -185,5 +236,6 @@ func isIgnorableAlterError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "duplicate column") ||
-		strings.Contains(message, "check that column/key exists")
+		strings.Contains(message, "check that column/key exists") ||
+		strings.Contains(message, "duplicate key name")
 }

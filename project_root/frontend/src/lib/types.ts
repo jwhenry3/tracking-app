@@ -5,6 +5,55 @@ export type Workspace = {
   role: string
 }
 
+export type CreateWorkspaceResult = {
+  status: 'created' | 'access_requested' | 'already_member'
+  workspace: Workspace
+}
+
+export type WorkspaceMember = {
+  user_id: number
+  username: string
+  role: string
+  joined_at: string
+}
+
+export type WorkspaceAccessRequest = {
+  id: number
+  workspace_id: number
+  workspace_name: string
+  user_id: number
+  username: string
+  message: string
+  status: string
+  created_at: string
+}
+
+export type WorkspaceInvite = {
+  id: number
+  workspace_id: number
+  workspace_name: string
+  invited_by: string
+  status: string
+  created_at: string
+}
+
+export type ChatConversation = {
+  id: number
+  workspace_id: number
+  kind: 'group' | 'direct'
+  title: string
+  members?: string[]
+}
+
+export type ChatMessage = {
+  id: number
+  conversation_id: number
+  sender_id: number
+  sender_username: string
+  content: string
+  created_at: string
+}
+
 export type PlannerEvent = {
   series_id: number
   occurrence_id: string
@@ -114,3 +163,4 @@ export type NavSection =
   | 'planner-monthly'
   | 'finances'
   | 'todos'
+  | 'chat'

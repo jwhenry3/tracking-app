@@ -127,6 +127,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	_ = EnsureWorkspaceGroupConversation(h.DB, workspaceID)
+
 	token, err := h.signToken(userID, req.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create token"})

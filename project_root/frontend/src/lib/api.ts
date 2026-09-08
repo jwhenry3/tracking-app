@@ -1,5 +1,8 @@
 import type {
   Bill,
+  ChatConversation,
+  ChatMessage,
+  CreateWorkspaceResult,
   Expense,
   FinanceSummary,
   IncomeEntry,
@@ -8,6 +11,9 @@ import type {
   Todo,
   TodoList,
   Workspace,
+  WorkspaceAccessRequest,
+  WorkspaceInvite,
+  WorkspaceMember,
 } from '@/lib/types'
 import type { OccurrenceScope } from '@/lib/recurrence'
 import { parseOccurrenceId } from '@/lib/recurrence'
@@ -68,19 +74,109 @@ export async function fetchWorkspaces(token: string) {
   return request<{ workspaces: Workspace[] }>('/api/workspaces', {}, token)
 }
 
-export async function createWorkspace(token: string, name: string) {
-  return request<Workspace>('/api/workspaces', {
+export async function createWorkspace(token: string, name: string, message?: string) {
+  return request<CreateWorkspaceResult>('/api/workspaces', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, message }),
   }, token)
 }
 
-export async function addWorkspaceMember(token: string, workspaceId: number, username: string) {
-  return request<{ message: string }>(
+export async function fetchWorkspaceMembers(token: string, workspaceId: number) {
+  return request<{ members: WorkspaceMember[] }>(
     `/api/workspaces/${workspaceId}/members`,
+    {},
+    token,
+  )
+}
+
+export async function inviteWorkspaceMember(token: string, workspaceId: number, username: string) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/invites`,
     { method: 'POST', body: JSON.stringify({ username }) },
     token,
   )
+}
+
+export async function fetchWorkspaceAccessRequests(token: string, workspaceId: number) {
+  return request<{ requests: WorkspaceAccessRequest[] }>(
+    `/api/workspaces/${workspaceId}/access-requests`,
+    {},
+    token,
+  )
+}
+
+export async function reviewWorkspaceAccessRequest(
+  token: string,
+  workspaceId: number,
+  requestId: number,
+  action: 'approve' | 'deny',
+) {
+  return request<{ message: string; status: string }>(
+    `/api/workspaces/${workspaceId}/access-requests/${requestId}`,
+    { method: 'PATCH', body: JSON.stringify({ action }) },
+    token,
+  )
+}
+
+export async function fetchMyInvites(token: string) {
+  return request<{ invites: WorkspaceInvite[] }>('/api/invites', {}, token)
+}
+
+export async function acceptInvite(token: string, inviteId: number) {
+  return request<{ message: string; workspace: Workspace }>(
+    `/api/invites/${inviteId}/accept`,
+    { method: 'POST' },
+    token,
+  )
+}
+
+export async function declineInvite(token: string, inviteId: number) {
+  return request<{ message: string }>(
+    `/api/invites/${inviteId}/decline`,
+    { method: 'POST' },
+    token,
+  )
+}
+
+export async function fetchChatConversations(token: string, workspaceId: number) {
+  return request<{ conversations: ChatConversation[] }>(
+    `/api/workspaces/${workspaceId}/chat/conversations`,
+    {},
+    token,
+  )
+}
+
+export async function fetchChatMessages(token: string, workspaceId: number, conversationId: number) {
+  return request<{ messages: ChatMessage[] }>(
+    `/api/workspaces/${workspaceId}/chat/conversations/${conversationId}/messages`,
+    {},
+    token,
+  )
+}
+
+export async function sendChatMessage(
+  token: string,
+  workspaceId: number,
+  conversationId: number,
+  content: string,
+) {
+  return request<ChatMessage>(
+    `/api/workspaces/${workspaceId}/chat/conversations/${conversationId}/messages`,
+    { method: 'POST', body: JSON.stringify({ content }) },
+    token,
+  )
+}
+
+export async function createDirectConversation(token: string, workspaceId: number, username: string) {
+  return request<ChatConversation>(
+    `/api/workspaces/${workspaceId}/chat/direct`,
+    { method: 'POST', body: JSON.stringify({ username }) },
+    token,
+  )
+}
+
+export async function addWorkspaceMember(token: string, workspaceId: number, username: string) {
+  return inviteWorkspaceMember(token, workspaceId, username)
 }
 
 export async function fetchEvents(token: string, workspaceId: number, start?: string, end?: string) {

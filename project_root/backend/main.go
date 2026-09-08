@@ -35,11 +35,16 @@ func main() {
 		log.Fatal("database migration failed:", err)
 	}
 
+	if err := database.SeedChat(db); err != nil {
+		log.Fatal("chat seed failed:", err)
+	}
+
 	messageHub := hub.New()
 	go messageHub.Run()
 
 	authHandler := &handlers.AuthHandler{DB: db, Cfg: cfg, Hub: messageHub}
 	workspaceHandler := &handlers.WorkspaceHandler{DB: db, Hub: messageHub}
+	chatHandler := &handlers.ChatHandler{DB: db, Hub: messageHub}
 	eventHandler := &handlers.EventHandler{DB: db, Hub: messageHub}
 	financeHandler := &handlers.FinanceHandler{DB: db, Hub: messageHub}
 	todoHandler := &handlers.TodoHandler{DB: db, Hub: messageHub}
@@ -56,11 +61,23 @@ func main() {
 
 		api.GET("/workspaces", middleware.JWTAuth(cfg.JWTSecret), workspaceHandler.List)
 		api.POST("/workspaces", middleware.JWTAuth(cfg.JWTSecret), workspaceHandler.Create)
+		api.GET("/invites", middleware.JWTAuth(cfg.JWTSecret), workspaceHandler.ListMyInvites)
+		api.POST("/invites/:inviteId/accept", middleware.JWTAuth(cfg.JWTSecret), workspaceHandler.AcceptInvite)
+		api.POST("/invites/:inviteId/decline", middleware.JWTAuth(cfg.JWTSecret), workspaceHandler.DeclineInvite)
 
 		ws := api.Group("/workspaces/:workspaceId", middleware.JWTAuth(cfg.JWTSecret), middleware.WorkspaceAccess(db))
 		{
 			ws.GET("", workspaceHandler.Get)
+			ws.GET("/members", workspaceHandler.ListMembers)
 			ws.POST("/members", workspaceHandler.AddMember)
+			ws.POST("/invites", workspaceHandler.InviteMember)
+			ws.GET("/access-requests", workspaceHandler.ListAccessRequests)
+			ws.PATCH("/access-requests/:requestId", workspaceHandler.ReviewAccessRequest)
+
+			ws.GET("/chat/conversations", chatHandler.ListConversations)
+			ws.GET("/chat/conversations/:conversationId/messages", chatHandler.ListMessages)
+			ws.POST("/chat/conversations/:conversationId/messages", chatHandler.SendMessage)
+			ws.POST("/chat/direct", chatHandler.CreateDirectConversation)
 
 			ws.GET("/events", eventHandler.List)
 			ws.POST("/events", eventHandler.Create)

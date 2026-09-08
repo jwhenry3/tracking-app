@@ -34,6 +34,10 @@ func main() {
 		log.Fatal("database seed failed:", err)
 	}
 
+	if err := database.SeedChat(db); err != nil {
+		log.Fatal("chat seed failed:", err)
+	}
+
 	log.Println("Database seeded successfully")
 	log.Println("Demo account: demo / password123")
 	log.Println("Partner account: partner / password123")

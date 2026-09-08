@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import { createWorkspace, fetchMe, fetchWorkspaces, login as loginRequest, register as registerRequest } from '@/lib/api'
-import type { Workspace } from '@/lib/types'
+import type { CreateWorkspaceResult, Workspace } from '@/lib/types'
 
 type AuthState = {
   token: string | null
@@ -15,7 +15,7 @@ type AuthState = {
   register: (username: string, password: string, workspaceName?: string) => Promise<void>
   hydrate: () => Promise<void>
   loadWorkspaces: () => Promise<void>
-  createWorkspace: (name: string) => Promise<Workspace>
+  createWorkspace: (name: string, message?: string) => Promise<CreateWorkspaceResult>
   setActiveWorkspace: (workspaceId: number) => void
   logout: () => void
   clearError: () => void
@@ -88,16 +88,20 @@ export const useAuthStore = create<AuthState>()(
         set({ workspaces: data.workspaces, activeWorkspaceId: nextActive })
       },
 
-      createWorkspace: async (name) => {
+      createWorkspace: async (name, message) => {
         const { token } = get()
         if (!token) throw new Error('Not authenticated')
 
-        const workspace = await createWorkspace(token, name)
-        set((state) => ({
-          workspaces: [...state.workspaces, workspace],
-          activeWorkspaceId: workspace.id,
-        }))
-        return workspace
+        const result = await createWorkspace(token, name, message)
+        if (result.status === 'created' || result.status === 'already_member') {
+          set((state) => ({
+            workspaces: state.workspaces.some((ws) => ws.id === result.workspace.id)
+              ? state.workspaces
+              : [...state.workspaces, result.workspace],
+            activeWorkspaceId: result.workspace.id,
+          }))
+        }
+        return result
       },
 
       setActiveWorkspace: (workspaceId) => set({ activeWorkspaceId: workspaceId }),
