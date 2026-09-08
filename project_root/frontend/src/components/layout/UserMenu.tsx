@@ -1,6 +1,8 @@
 import { LogOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { ThemeSwitcher } from '@/components/layout/ThemeSwitcher'
+
 type UserMenuProps = {
   username: string | null
   connected: boolean
@@ -60,7 +62,7 @@ export function UserMenu({ username, connected, onLogout }: UserMenuProps) {
       {open ? (
         <div
           role="menu"
-          className="absolute left-full top-0 z-50 ml-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg"
+          className="absolute left-full top-0 z-50 ml-2 w-72 rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg"
         >
           <div className="border-b border-white/10 px-3 py-2">
             <p className="truncate text-sm font-medium">{displayName}</p>
@@ -68,6 +70,9 @@ export function UserMenu({ username, connected, onLogout }: UserMenuProps) {
               {connected ? 'Live sync connected' : 'Live sync disconnected'}
             </p>
           </div>
+
+          <ThemeSwitcher />
+
           <button
             type="button"
             role="menuitem"
