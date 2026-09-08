@@ -86,10 +86,23 @@ export function DialogContent({ children, className }: DialogContentProps) {
   return (
     <div
       className={cn(
-        'relative flex h-full max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border-0 bg-background shadow-xl sm:h-auto sm:max-h-[min(90vh,760px)] sm:rounded-lg sm:border',
+        'relative flex h-full max-h-[100dvh] w-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-background shadow-xl sm:h-auto sm:max-h-[min(90vh,760px)] sm:rounded-lg sm:border',
         className,
       )}
     >
+      {children}
+    </div>
+  )
+}
+
+type DialogBodyProps = {
+  children: ReactNode
+  className?: string
+}
+
+export function DialogBody({ children, className }: DialogBodyProps) {
+  return (
+    <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', className)}>
       {children}
     </div>
   )

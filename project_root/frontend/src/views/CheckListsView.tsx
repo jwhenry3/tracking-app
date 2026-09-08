@@ -30,7 +30,7 @@ import {
 } from '@/lib/checklistPeriods'
 import { toLocalIsoDate } from '@/lib/calendarUtils'
 import { normalizeFinanceDate } from '@/lib/financeUtils'
-import { invalidateCheckLists } from '@/lib/queries/invalidate'
+import { invalidateCheckListCatalog, invalidateCheckListTodos } from '@/lib/queries/invalidate'
 import {
   useTodoListsQuery,
   useTodosQuery,
@@ -181,7 +181,15 @@ export function CheckListsView() {
     return [...daily, ...periodic, ...general]
   }, [lists])
 
-  const todosQuery = useTodosQuery(workspaceNumericId, activeListId, queriesEnabled && Boolean(activeListId))
+  const activeList = sortedLists.find((list) => list.id === activeListId) ?? null
+  const activeOccurrence = activeList?.list_date ?? null
+
+  const todosQuery = useTodosQuery(
+    workspaceNumericId,
+    activeListId,
+    queriesEnabled && Boolean(activeListId),
+    activeOccurrence,
+  )
   const items = todosQuery.data ?? []
 
   useEffect(() => {
@@ -205,9 +213,17 @@ export function CheckListsView() {
     })
   }, [sortedLists, today])
 
-  async function refreshLists() {
+  async function refreshCatalog() {
     if (!workspaceNumericId) return
-    await invalidateCheckLists(queryClient, workspaceNumericId)
+    await invalidateCheckListCatalog(queryClient, workspaceNumericId)
+  }
+
+  async function refreshActiveTodos() {
+    if (!workspaceNumericId || !activeListId) return
+    await invalidateCheckListTodos(queryClient, workspaceNumericId, {
+      listId: activeListId,
+      occurrence: activeOccurrence,
+    })
   }
 
   function closeDialog() {
@@ -230,7 +246,7 @@ export function CheckListsView() {
     if (!token || !workspaceNumericId || !activeListId || !itemTitle.trim()) return
     await createTodo(token, workspaceNumericId, { list_id: activeListId, title: itemTitle.trim() })
     setItemTitle('')
-    await refreshLists()
+    await refreshActiveTodos()
     closeDialog()
   }
 
@@ -248,7 +264,7 @@ export function CheckListsView() {
     const list = await createTodoList(token, workspaceNumericId, payload)
     setListForm(defaultCheckListFormState(today))
     setActiveListId(list.id)
-    await refreshLists()
+    await refreshCatalog()
     closeDialog()
   }
 
@@ -268,7 +284,7 @@ export function CheckListsView() {
       const updated = await updateTodoList(token, workspaceNumericId, editTarget.id, payload)
       setActiveListId(updated.id)
       closeEditDialog()
-      await refreshLists()
+      await refreshCatalog()
     } finally {
       setSavingEdit(false)
     }
@@ -284,13 +300,12 @@ export function CheckListsView() {
         setActiveListId(remaining[0]?.id ?? null)
       }
       setDeleteTarget(null)
-      await refreshLists()
+      await refreshCatalog()
     } finally {
       setDeleting(false)
     }
   }
 
-  const activeList = sortedLists.find((list) => list.id === activeListId)
   const dailyLists = sortedLists.filter((list) => list.kind === 'daily')
   const periodicLists = sortedLists.filter((list) => isPeriodicList(list))
   const generalLists = sortedLists.filter((list) => list.kind === 'general')
@@ -437,7 +452,8 @@ export function CheckListsView() {
                     token={token}
                     workspaceId={workspaceNumericId}
                     item={item}
-                    onChange={() => void refreshLists()}
+                    occurrence={activeOccurrence ?? undefined}
+                    onChange={() => void refreshActiveTodos()}
                   />
                 ))
               )}
@@ -453,7 +469,7 @@ export function CheckListsView() {
                       title: itemTitle.trim(),
                     })
                     setItemTitle('')
-                    await refreshLists()
+                    await refreshActiveTodos()
                   })()
                 }}
               >

@@ -100,6 +100,15 @@ func PeriodicChecklistRule(scope string) string {
 	}
 }
 
+func DailyChecklistRule() string {
+	return "FREQ=DAILY;INTERVAL=1"
+}
+
+func IsDailyChecklistRule(rule string) bool {
+	rule = strings.ToUpper(NormalizeRule(rule))
+	return strings.HasPrefix(rule, "FREQ=DAILY")
+}
+
 // PeriodStartUTC returns the start of the calendar period containing value.
 func PeriodStartUTC(value time.Time, scope string) time.Time {
 	day := dateOnlyUTC(value)
@@ -120,6 +129,31 @@ func PeriodStartFromISODate(raw, scope string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return PeriodStartUTC(parsed, scope), nil
+}
+
+// PeriodEndUTC returns the last calendar day of the period containing value.
+func PeriodEndUTC(value time.Time, scope string) time.Time {
+	start := PeriodStartUTC(value, scope)
+	switch strings.ToLower(scope) {
+	case "month":
+		return start.AddDate(0, 1, -1)
+	case "year":
+		return time.Date(start.Year(), 12, 31, 0, 0, 0, 0, time.UTC)
+	default:
+		return start.AddDate(0, 0, 6)
+	}
+}
+
+// NextPeriodStartUTC returns the first day of the next period after current.
+func NextPeriodStartUTC(current time.Time, scope string) time.Time {
+	switch strings.ToLower(scope) {
+	case "month":
+		return current.AddDate(0, 1, 0)
+	case "year":
+		return current.AddDate(1, 0, 0)
+	default:
+		return current.AddDate(0, 0, 7)
+	}
 }
 
 // WeekStartUTC returns the Sunday that starts the calendar week containing value.

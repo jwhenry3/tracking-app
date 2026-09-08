@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 
 import { FormField } from '@/components/forms/FormField'
+import { EventTimeRangeFields } from '@/components/forms/EventTimeRangeFields'
 import { OccurrenceScopePicker } from '@/components/forms/OccurrenceScopePicker'
 import { RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { WorkspaceField } from '@/components/workspace/WorkspaceField'
@@ -18,6 +19,12 @@ import {
   patchIncomeOccurrence,
 } from '@/lib/api'
 import { normalizeFinanceDate } from '@/lib/financeUtils'
+import {
+  buildEventSchedule,
+  defaultEventTimeRangeState,
+  eventTimeRangeFromPlannerEvent,
+  type EventTimeRangeState,
+} from '@/lib/eventTimeRange'
 import {
   buildRecurrenceRule,
   defaultRecurrenceConfig,
@@ -57,6 +64,11 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
   const [paid, setPaid] = useState(entry.kind === 'bill' ? entry.data.paid : false)
   const [paidOff, setPaidOff] = useState(entry.kind === 'bill' ? Boolean(entry.data.paid_off) : false)
   const [recurrence, setRecurrence] = useState<RecurrenceConfig>(() => buildRecurrenceState(entry))
+  const [eventTimeRange, setEventTimeRange] = useState<EventTimeRangeState>(() =>
+    entry.kind === 'event'
+      ? eventTimeRangeFromPlannerEvent(entry.data)
+      : defaultEventTimeRangeState(),
+  )
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -71,6 +83,11 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
     setPaid(entry.kind === 'bill' ? entry.data.paid : false)
     setPaidOff(entry.kind === 'bill' ? Boolean(entry.data.paid_off) : false)
     setRecurrence(buildRecurrenceState(entry))
+    setEventTimeRange(
+      entry.kind === 'event'
+        ? eventTimeRangeFromPlannerEvent(entry.data)
+        : defaultEventTimeRangeState(),
+    )
   }, [entry, isRecurring, defaultScope])
 
   const recurrenceReadOnly = isRecurring && scope === 'this'
@@ -85,12 +102,14 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
       const recurrenceRule = resolveRecurrencePayload(effectiveScope, recurrence, recurrenceAnchorDate)
 
       if (entry.kind === 'event') {
+        const schedule = buildEventSchedule(date, eventTimeRange)
         await patchEventOccurrence(token, workspaceId, entry.data, {
           scope: effectiveScope,
           title: title.trim(),
           description: description.trim() || undefined,
-          start_at: `${date}T09:00:00Z`,
-          end_at: `${date}T10:00:00Z`,
+          start_at: schedule.start_at,
+          end_at: schedule.end_at,
+          all_day: schedule.all_day,
           recurrence: recurrenceRule,
         })
       } else if (entry.kind === 'income') {
@@ -173,17 +192,24 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
       />
 
       {entry.kind === 'event' ? (
-        <div className="space-y-2">
-          <Label htmlFor="edit-entry-description">Description (optional)</Label>
-          <Textarea
-            id="edit-entry-description"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
+        <>
+          <EventTimeRangeFields
+            value={eventTimeRange}
+            onChange={setEventTimeRange}
+            idPrefix="edit-entry-event-time"
           />
-        </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-entry-description">Description (optional)</Label>
+            <Textarea
+              id="edit-entry-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </div>
+        </>
       ) : null}
 
-      {entry.kind === 'income' || entry.kind === 'expense' ? (
+      {entry.kind === 'event' ? null : entry.kind === 'income' || entry.kind === 'expense' ? (
         <FormField label="Notes (optional)" value={notes} onChange={setNotes} id="edit-entry-notes" required={false} />
       ) : null}
 

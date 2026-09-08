@@ -392,6 +392,7 @@ export async function patchEventOccurrence(
     description?: string
     start_at?: string
     end_at?: string
+    all_day?: boolean
     recurrence?: string
   },
 ) {
@@ -682,10 +683,28 @@ export async function deleteExpense(token: string, workspaceId: number, expenseI
   )
 }
 
-export async function fetchTodoLists(token: string, workspaceId: number, date?: string) {
-  const query = date ? `?date=${encodeURIComponent(date)}` : ''
+export type TodoListQuery = {
+  date?: string
+  start?: string
+  end?: string
+}
+
+export async function fetchTodoLists(
+  token: string,
+  workspaceId: number,
+  query?: string | TodoListQuery,
+) {
+  const params = new URLSearchParams()
+  if (typeof query === 'string') {
+    if (query) params.set('date', query)
+  } else if (query) {
+    if (query.date) params.set('date', query.date)
+    if (query.start) params.set('start', query.start)
+    if (query.end) params.set('end', query.end)
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : ''
   return request<{ lists: TodoList[] }>(
-    `/api/workspaces/${workspaceId}/todo-lists${query}`,
+    `/api/workspaces/${workspaceId}/todo-lists${suffix}`,
     {},
     token,
   )
@@ -732,8 +751,16 @@ export async function deleteTodoList(token: string, workspaceId: number, listId:
   )
 }
 
-export async function fetchTodos(token: string, workspaceId: number, listId?: number) {
-  const query = listId ? `?list_id=${listId}` : ''
+export async function fetchTodos(
+  token: string,
+  workspaceId: number,
+  listId?: number,
+  occurrence?: string,
+) {
+  const params = new URLSearchParams()
+  if (listId) params.set('list_id', String(listId))
+  if (occurrence) params.set('occurrence', occurrence)
+  const query = params.toString() ? `?${params.toString()}` : ''
   return request<{ todos: Todo[] }>(
     `/api/workspaces/${workspaceId}/todos${query}`,
     {},
@@ -757,7 +784,7 @@ export async function updateTodo(
   token: string,
   workspaceId: number,
   todoId: number,
-  payload: { title?: string; completed?: boolean },
+  payload: { title?: string; completed?: boolean; occurrence?: string },
 ) {
   return request<{ message: string }>(
     `/api/workspaces/${workspaceId}/todos/${todoId}`,

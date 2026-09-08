@@ -216,7 +216,10 @@ export type TodoList = {
   recurrence?: string
   is_recurring?: boolean
   series_id?: number | null
+  occurrence_id?: string | null
   period_scope?: PeriodScope | null
+  span_start?: string | null
+  period_end?: string | null
 }
 
 export type Todo = {

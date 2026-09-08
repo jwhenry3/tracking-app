@@ -12,6 +12,7 @@ type InlineCheckListItemProps = {
   token: string
   workspaceId: number
   item: Todo
+  occurrence?: string
   onChange: () => void
   compact?: boolean
 }
@@ -20,6 +21,7 @@ export function InlineCheckListItem({
   token,
   workspaceId,
   item,
+  occurrence,
   onChange,
   compact = false,
 }: InlineCheckListItemProps) {
@@ -32,7 +34,10 @@ export function InlineCheckListItem({
   }, [item.title])
 
   async function handleToggleCompleted() {
-    await updateTodo(token, workspaceId, item.id, { completed: !item.completed })
+    await updateTodo(token, workspaceId, item.id, {
+      completed: !item.completed,
+      occurrence,
+    })
     onChange()
   }
 

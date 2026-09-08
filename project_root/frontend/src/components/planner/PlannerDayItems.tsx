@@ -65,7 +65,7 @@ export function PlannerDayItems({
           scopeLabel && taskLists.length > 1 ? `${list.name} (${scopeLabel})` : list.name
 
         return (
-          <div key={list.id}>
+          <div key={`${list.id}-${list.occurrenceDate ?? date}`}>
             {taskLists.length > 1 ? (
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {listLabel}
@@ -85,6 +85,7 @@ export function PlannerDayItems({
                     token={token}
                     workspaceId={workspaceId}
                     item={item}
+                    occurrence={list.occurrenceDate ?? undefined}
                     compact
                     onChange={() => void refreshDayItems()}
                   />

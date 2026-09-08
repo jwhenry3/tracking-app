@@ -9,19 +9,23 @@ import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryFor
 import { OperationDialog } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderDivider, PageHeaderIconButton } from '@/components/layout/PageHeader'
 import { AddDayEntryForm, type AddDayEntryTab } from '@/components/planner/AddDayEntryForm'
+import type { WeekCheckListItem } from '@/components/planner/CheckListChip'
+import { PlannerCheckListDialog } from '@/components/planner/PlannerCheckListDialog'
 import { PlannerDayPanel } from '@/components/planner/PlannerDayPanel'
+import { PlannerEntryDetailDialog } from '@/components/planner/PlannerEntryDetailDialog'
 import type { PlannerScheduleItem } from '@/components/planner/PlannerScheduleRow'
-import { WeeklyPlannerGrid } from '@/components/planner/WeeklyPlannerGrid'
-import { Card, CardContent } from '@/components/ui/card'
+import { WeeklyPlannerWeekView } from '@/components/planner/WeeklyPlannerWeekView'
 import { formatDayLabel, normalizeFinanceDate } from '@/lib/financeUtils'
 import { toLocalIsoDate } from '@/lib/calendarUtils'
-import { invalidatePlannerDay } from '@/lib/queries/invalidate'
+import { invalidatePlannerDay, invalidatePlannerFinance } from '@/lib/queries/invalidate'
 import {
   useBillsQuery,
   useEventsQuery,
   useExpensesQuery,
   useIncomeQuery,
+  usePlannerWeekQuery,
 } from '@/lib/queries/hooks'
+import { queryKeys } from '@/lib/queries/keys'
 import {
   isCheckListDayVisible,
   loadPlannerCheckListPrefs,
@@ -94,6 +98,10 @@ export function PlannerView({ mode }: PlannerViewProps) {
   const [payExpense, setPayExpense] = useState<Expense | null>(null)
   const [payExpenseDialogOpen, setPayExpenseDialogOpen] = useState(false)
   const [selectedWeekDay, setSelectedWeekDay] = useState<string | null>(null)
+  const [detailItem, setDetailItem] = useState<PlannerScheduleItem | null>(null)
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [checkListTarget, setCheckListTarget] = useState<WeekCheckListItem | null>(null)
+  const [checkListDialogOpen, setCheckListDialogOpen] = useState(false)
   const [checkListPrefs, setCheckListPrefs] = useState<PlannerCheckListPrefs>({
     showAll: true,
     hiddenDays: [],
@@ -131,10 +139,28 @@ export function PlannerView({ mode }: PlannerViewProps) {
     ),
     [expensesQuery.data, range.end, range.start],
   )
+  const plannerWeekQuery = usePlannerWeekQuery(
+    workspaceNumericId,
+    plannerDays,
+    queriesEnabled && mode === 'weekly',
+  )
 
   function refreshPlanner(day?: string | null) {
     if (!workspaceNumericId) return
-    const targetDay = day ?? (mode === 'weekly' ? selectedWeekDay : plannerDays[0]) ?? addDate
+    if (mode === 'weekly') {
+      void Promise.all([
+        invalidatePlannerFinance(queryClient, workspaceNumericId),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.plannerWeek(
+            workspaceNumericId,
+            plannerDays[0] ?? '',
+            plannerDays[plannerDays.length - 1] ?? '',
+          ),
+        }),
+      ])
+      return
+    }
+    const targetDay = day ?? plannerDays[0] ?? addDate
     void invalidatePlannerDay(queryClient, workspaceNumericId, targetDay)
   }
 
@@ -184,6 +210,47 @@ export function PlannerView({ mode }: PlannerViewProps) {
 
     return map
   }, [events, income, bills, expenses])
+
+  const checkListsByDay = useMemo(() => {
+    const map = new Map<string, WeekCheckListItem[]>()
+    const weekData = plannerWeekQuery.data ?? {}
+
+    for (const day of plannerDays) {
+      if (!isCheckListDayVisible(checkListPrefs, day)) continue
+      const dayData = weekData[day]
+      if (!dayData) continue
+
+      const lists = dayData.dailyLists.map((list) => ({
+        listId: list.id,
+        name: list.name,
+        day,
+        occurrence: list.occurrenceDate,
+        completedCount: list.items.filter((item) => item.completed).length,
+        totalCount: list.items.length,
+      }))
+
+      if (lists.length > 0) {
+        map.set(day, lists)
+      }
+    }
+
+    return map
+  }, [checkListPrefs, plannerDays, plannerWeekQuery.data])
+
+  function openScheduleItem(item: PlannerScheduleItem) {
+    setDetailItem(item)
+    setDetailDialogOpen(true)
+  }
+
+  function openCheckList(item: WeekCheckListItem) {
+    setCheckListTarget(item)
+    setCheckListDialogOpen(true)
+  }
+
+  function closeDetailDialog() {
+    setDetailDialogOpen(false)
+    setDetailItem(null)
+  }
 
   function closeDialog() {
     setDialogOpen(false)
@@ -289,34 +356,50 @@ export function PlannerView({ mode }: PlannerViewProps) {
         )}
       >
         {mode === 'weekly' ? (
-          <>
-            <div className="shrink-0">
-              <WeeklyPlannerGrid
-                days={plannerDays}
-                scheduleByDay={scheduleByDay}
-                selectedDay={selectedWeekDay}
-                todayIso={todayIso}
-                onSelectDay={setSelectedWeekDay}
-              />
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {selectedWeekDay ? (
-                renderDayPanel(selectedWeekDay)
-              ) : (
-                <Card className="flex h-full w-full flex-col overflow-hidden">
-                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                    Select a day to view its planner.
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </>
+          <WeeklyPlannerWeekView
+            days={plannerDays}
+            scheduleByDay={scheduleByDay}
+            checkListsByDay={checkListsByDay}
+            selectedDay={selectedWeekDay}
+            todayIso={todayIso}
+            onSelectDay={setSelectedWeekDay}
+            onOpenScheduleItem={openScheduleItem}
+            onOpenCheckList={openCheckList}
+          />
         ) : (
           <div className="mx-auto max-w-3xl">
             {renderDayPanel(plannerDays[0])}
           </div>
         )}
       </div>
+
+      <PlannerEntryDetailDialog
+        open={detailDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeDetailDialog()
+          else setDetailDialogOpen(true)
+        }}
+        item={detailItem}
+        onEdit={startEdit}
+        onPay={startPay}
+        onPayExpense={startPayExpense}
+      />
+
+      <PlannerCheckListDialog
+        open={checkListDialogOpen}
+        onOpenChange={(open) => {
+          setCheckListDialogOpen(open)
+          if (!open) setCheckListTarget(null)
+        }}
+        target={checkListTarget}
+        token={token}
+        workspaceId={workspaceNumericId}
+        plannerWeek={
+          mode === 'weekly' && plannerDays.length > 0
+            ? { start: plannerDays[0], end: plannerDays[plannerDays.length - 1] }
+            : undefined
+        }
+      />
 
       <OperationDialog
         open={dialogOpen}

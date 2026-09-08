@@ -21,7 +21,7 @@ import {
 import { FormField } from '@/components/forms/FormField'
 import { MarkdownContent } from '@/components/notes/MarkdownContent'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { dataTransferHasFiles, filesFromList } from '@/lib/files'
 import { insertMarkdown, insertSnippet, prefixLines } from '@/lib/markdown'
@@ -305,8 +305,9 @@ export function MarkdownEditor({
 
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
         <DialogContent className="max-w-md">
+          <DialogBody className="p-6">
           <div
-            className="space-y-4 p-6"
+            className="space-y-4"
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault()
@@ -342,6 +343,7 @@ export function MarkdownEditor({
               </Button>
             </div>
           </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </div>

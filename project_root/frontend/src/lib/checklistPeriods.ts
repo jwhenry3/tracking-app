@@ -73,3 +73,20 @@ export function currentPeriodStart(scope: PeriodScope, today = new Date()) {
   const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   return periodStartIsoDate(iso, scope)
 }
+
+export function listSpanStart(list: TodoList) {
+  return normalizeFinanceDate(list.span_start ?? list.list_date) ?? ''
+}
+
+export function listSpanEnd(list: TodoList) {
+  return normalizeFinanceDate(list.period_end ?? list.list_date) ?? ''
+}
+
+export function daysInListSpan(list: TodoList, days: string[]) {
+  const start = listSpanStart(list)
+  const end = listSpanEnd(list)
+  if (!start || !end) {
+    return list.list_date && days.includes(list.list_date) ? [list.list_date] : []
+  }
+  return days.filter((day) => day >= start && day <= end)
+}

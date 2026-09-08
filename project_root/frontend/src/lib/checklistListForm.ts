@@ -15,7 +15,7 @@ export const CHECK_LIST_KIND_OPTIONS: {
     value: 'daily',
     label: 'Daily',
     description:
-      'One specific day. Shows in the planner on that date only. Completions apply to that day alone.',
+      'Every day starting from the chosen date. The same tasks appear each day with separate completions.',
   },
   {
     value: 'periodic',
@@ -66,8 +66,12 @@ export function defaultCheckListFormState(today = toLocalIsoDate()): CheckListFo
 export function inferCheckListKind(list: TodoList): CheckListKind {
   if (list.kind === 'general') return 'general'
   if (isPeriodicList(list)) return 'periodic'
-  if (list.is_recurring && list.recurrence) return 'recurring'
+  if (list.is_recurring && list.recurrence && !isDailyChecklistRule(list.recurrence)) return 'recurring'
   return 'daily'
+}
+
+function isDailyChecklistRule(rule: string) {
+  return rule.toUpperCase().includes('FREQ=DAILY')
 }
 
 export function checkListFormFromList(list: TodoList, today = toLocalIsoDate()): CheckListFormState {

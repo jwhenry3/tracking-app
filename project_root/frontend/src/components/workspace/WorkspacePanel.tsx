@@ -14,7 +14,7 @@ import {
 } from '@/components/manage/ManageTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   acceptInvite,
@@ -358,7 +358,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
 
       <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
         <DialogContent className="max-w-md">
-          <div className="p-6">
+          <DialogBody className="p-6">
             <h2 className="text-lg font-semibold">Leave {workspace.name}?</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               You will lose access to this workspace&apos;s calendar, finances, chat, and other data.
@@ -372,7 +372,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
                 {leaving ? 'Leaving…' : 'Leave workspace'}
               </Button>
             </div>
-          </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </OperationDialog>

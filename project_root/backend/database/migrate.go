@@ -152,6 +152,18 @@ var migrationStatements = []string{
 		UNIQUE KEY uniq_recurrence_occurrence (entity_type, series_id, occurrence_at),
 		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 	)`,
+	`CREATE TABLE IF NOT EXISTS todo_occurrence_completions (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		workspace_id INT NOT NULL,
+		series_id INT NOT NULL,
+		occurrence_at DATE NOT NULL,
+		todo_id INT NOT NULL,
+		completed BOOLEAN NOT NULL DEFAULT FALSE,
+		UNIQUE KEY uniq_todo_occurrence (series_id, occurrence_at, todo_id),
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+		FOREIGN KEY (series_id) REFERENCES todo_lists(id) ON DELETE CASCADE,
+		FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+	)`,
 	`CREATE TABLE IF NOT EXISTS workspace_access_requests (
 		id INT AUTO_INCREMENT PRIMARY KEY,
 		workspace_id INT NOT NULL,

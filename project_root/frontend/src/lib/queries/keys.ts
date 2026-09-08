@@ -20,11 +20,13 @@ export const queryKeys = {
   todoLists: (workspaceId: number, date?: string) =>
     ['todo-lists', workspaceId, date ?? null] as const,
   dailyList: (workspaceId: number, date: string) => ['daily-list', workspaceId, date] as const,
-  todos: (workspaceId: number, listId?: number | null) =>
-    ['todos', workspaceId, listId ?? null] as const,
+  todos: (workspaceId: number, listId?: number | null, occurrence?: string | null) =>
+    ['todos', workspaceId, listId ?? null, occurrence ?? null] as const,
   notes: (workspaceId: number, listId?: number | null) =>
     ['notes', workspaceId, listId ?? null] as const,
   plannerDay: (workspaceId: number, date: string) => ['planner-day', workspaceId, date] as const,
+  plannerWeek: (workspaceId: number, start: string, end: string) =>
+    ['planner-week', workspaceId, start, end] as const,
   chatConversations: (workspaceId: number) => ['chat-conversations', workspaceId] as const,
   chatMessages: (workspaceId: number, conversationId: number) =>
     ['chat-messages', workspaceId, conversationId] as const,

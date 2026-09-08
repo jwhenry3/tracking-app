@@ -2,6 +2,13 @@ import type { QueryClient } from '@tanstack/react-query'
 
 import { queryKeys } from '@/lib/queries/keys'
 
+export type CheckListTodoScope = {
+  listId: number
+  occurrence?: string | null
+  plannerWeek?: { start: string; end: string }
+  plannerDay?: string
+}
+
 export function invalidateWorkspaceEntity(
   queryClient: QueryClient,
   workspaceId: number,
@@ -26,15 +33,14 @@ export function invalidateWorkspaceEntity(
     case 'expense':
       return queryClient.invalidateQueries({ queryKey: ['expenses', workspaceId] })
     case 'todo':
-      return queryClient.invalidateQueries({ queryKey: ['todos', workspaceId] })
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['planner-week', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['planner-day', workspaceId] }),
+      ])
     case 'note':
       return queryClient.invalidateQueries({ queryKey: ['notes', workspaceId] })
     case 'todo_list':
-      return Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['todo-lists', workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['daily-list', workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['planner-day', workspaceId] }),
-      ])
+      return invalidateCheckListCatalog(queryClient, workspaceId)
     case 'chat':
     case 'chat_message':
     case 'message':
@@ -60,14 +66,51 @@ export function invalidateWorkspaceEntity(
   }
 }
 
-export function invalidateCheckLists(queryClient: QueryClient, workspaceId: number) {
+export function invalidateCheckListCatalog(queryClient: QueryClient, workspaceId: number) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['todo-lists', workspaceId] }),
-    queryClient.invalidateQueries({ queryKey: ['daily-list', workspaceId] }),
-    queryClient.invalidateQueries({ queryKey: ['todos', workspaceId] }),
-    queryClient.invalidateQueries({ queryKey: ['notes', workspaceId] }),
+    queryClient.invalidateQueries({ queryKey: ['planner-week', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['planner-day', workspaceId] }),
   ])
+}
+
+export function invalidateCheckListTodos(
+  queryClient: QueryClient,
+  workspaceId: number,
+  scope: CheckListTodoScope,
+) {
+  const tasks: Promise<void>[] = [
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.todos(workspaceId, scope.listId, scope.occurrence ?? null),
+    }),
+  ]
+
+  if (scope.plannerWeek) {
+    tasks.push(
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.plannerWeek(
+          workspaceId,
+          scope.plannerWeek.start,
+          scope.plannerWeek.end,
+        ),
+      }),
+    )
+  }
+
+  if (scope.plannerDay) {
+    tasks.push(
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.plannerDay(workspaceId, scope.plannerDay),
+      }),
+    )
+  }
+
+  return Promise.all(tasks)
+}
+
+/** @deprecated Prefer invalidateCheckListCatalog or invalidateCheckListTodos */
+export function invalidateCheckLists(queryClient: QueryClient, workspaceId: number) {
+  return invalidateCheckListCatalog(queryClient, workspaceId)
 }
 
 export function invalidatePlannerFinance(queryClient: QueryClient, workspaceId: number) {
@@ -87,7 +130,5 @@ export function invalidatePlannerDay(queryClient: QueryClient, workspaceId: numb
   return Promise.all([
     invalidatePlannerFinance(queryClient, workspaceId),
     queryClient.invalidateQueries({ queryKey: queryKeys.plannerDay(workspaceId, date) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.todos(workspaceId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.notes(workspaceId) }),
   ])
 }

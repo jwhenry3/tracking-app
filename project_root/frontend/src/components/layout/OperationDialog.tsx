@@ -1,7 +1,7 @@
 import { X, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,7 @@ type OperationDialogProps = {
   description?: string
   children: ReactNode
   className?: string
+  bodyClassName?: string
 }
 
 export function OperationDialog({
@@ -21,6 +22,7 @@ export function OperationDialog({
   description,
   children,
   className,
+  bodyClassName,
 }: OperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -42,7 +44,9 @@ export function OperationDialog({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto p-4 sm:p-6">{children}</div>
+        <DialogBody className={cn('flex flex-col p-4 sm:p-6', bodyClassName)}>
+          {children}
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

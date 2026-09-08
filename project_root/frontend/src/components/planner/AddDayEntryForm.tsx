@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { FormField } from '@/components/forms/FormField'
+import { EventTimeRangeFields } from '@/components/forms/EventTimeRangeFields'
 import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { OpsTabs } from '@/components/layout/OperationDialog'
 import { entryTypeMeta } from '@/components/ops/EntryTypeIcon'
@@ -14,6 +15,10 @@ import {
   createExpense,
   createIncome,
 } from '@/lib/api'
+import {
+  buildEventSchedule,
+  defaultEventTimeRangeState,
+} from '@/lib/eventTimeRange'
 import { buildRecurrenceRule } from '@/lib/recurrence'
 import { canManageWorkspace, getManageableWorkspaces } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
@@ -70,6 +75,7 @@ export function AddDayEntryForm({
     date: defaultDate,
     description: '',
     recurrence: defaultRecurrenceConfig,
+    timeRange: defaultEventTimeRangeState(),
   })
   const [incomeForm, setIncomeForm] = useState({
     title: '',
@@ -106,14 +112,18 @@ export function AddDayEntryForm({
     await createEvent(token, selectedWorkspaceId, {
       title: eventForm.title.trim(),
       description: eventForm.description,
-      start_at: `${eventForm.date}T09:00:00Z`,
-      end_at: `${eventForm.date}T10:00:00Z`,
-      all_day: true,
+      ...buildEventSchedule(eventForm.date, eventForm.timeRange),
       color: '#2563eb',
       recurrence: buildRecurrenceRule(eventForm.recurrence, eventForm.date),
     })
 
-    setEventForm({ title: '', date: defaultDate, description: '', recurrence: defaultRecurrenceConfig })
+    setEventForm({
+      title: '',
+      date: defaultDate,
+      description: '',
+      recurrence: defaultRecurrenceConfig,
+      timeRange: defaultEventTimeRangeState(),
+    })
     onCreated?.()
   }
 
@@ -202,6 +212,11 @@ export function AddDayEntryForm({
           />
           <FormField label="Title" value={eventForm.title} onChange={(value) => setEventForm((state) => ({ ...state, title: value }))} />
           <FormField label="Date" type="date" value={eventForm.date} onChange={(value) => setEventForm((state) => ({ ...state, date: value }))} />
+          <EventTimeRangeFields
+            value={eventForm.timeRange}
+            onChange={(timeRange) => setEventForm((state) => ({ ...state, timeRange }))}
+            idPrefix="day-entry-event-time"
+          />
           <RecurrencePicker
             value={eventForm.recurrence}
             anchorDate={eventForm.date}

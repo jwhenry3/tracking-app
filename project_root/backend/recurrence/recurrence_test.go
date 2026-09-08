@@ -137,6 +137,19 @@ func TestParsePeriodScope(t *testing.T) {
 	}
 }
 
+func TestPeriodEndUTC(t *testing.T) {
+	day := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
+	if got := PeriodEndUTC(day, "week").Format("2006-01-02"); got != "2026-03-14" {
+		t.Fatalf("expected week end 2026-03-14, got %s", got)
+	}
+	if got := PeriodEndUTC(day, "month").Format("2006-01-02"); got != "2026-03-31" {
+		t.Fatalf("expected month end 2026-03-31, got %s", got)
+	}
+	if got := PeriodEndUTC(day, "year").Format("2006-01-02"); got != "2026-12-31" {
+		t.Fatalf("expected year end 2026-12-31, got %s", got)
+	}
+}
+
 func TestPeriodStartUTC(t *testing.T) {
 	day := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
 	if got := PeriodStartUTC(day, "week").Format("2006-01-02"); got != "2026-03-08" {

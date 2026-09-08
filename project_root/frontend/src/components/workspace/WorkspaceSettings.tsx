@@ -10,7 +10,7 @@ import {
   ManageTableTh,
 } from '@/components/manage/ManageTable'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { archiveWorkspace, updateWorkspaceSettings } from '@/lib/api'
 import type { Workspace, WorkspaceFocusArea } from '@/lib/types'
@@ -180,8 +180,9 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
         }}
       >
         <DialogContent className="max-w-md">
+          <DialogBody className="p-6">
           {archiveStep === 1 ? (
-            <div className="p-6">
+            <div>
               <h2 className="text-lg font-semibold">Archive {workspace.name}?</h2>
               <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
                 <li>Every member will lose access immediately.</li>
@@ -199,7 +200,7 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
               </div>
             </div>
           ) : (
-            <div className="p-6">
+            <div>
               <h2 className="text-lg font-semibold">Confirm archive</h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 Type <span className="font-medium text-foreground">{workspace.name}</span> to confirm you
@@ -228,6 +229,7 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
               </div>
             </div>
           )}
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </>

@@ -8,6 +8,7 @@ export const scheduleChipColors = {
   billDue: '#dc2626',
   billPaid: '#15803d',
   billSkipped: '#94a3b8',
+  checklist: '#7c3aed',
 } as const
 
 export function billChipColorValue(bill: Pick<Bill, 'paid' | 'skipped' | 'due_date'>) {

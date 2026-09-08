@@ -23,11 +23,12 @@ import {
   fetchWorkspaceMembers,
   fetchWorkspaces,
 } from '@/lib/api'
-import { isPeriodicList, listPeriodScope } from '@/lib/checklistPeriods'
+import { daysInListSpan, isPeriodicList, listPeriodScope } from '@/lib/checklistPeriods'
 import { normalizeFinanceDate } from '@/lib/financeUtils'
 import { queryKeys } from '@/lib/queries/keys'
 import type { CalendarFocusFilter } from '@/lib/calendarFocusFilter'
 import type { CentralCalendarItem } from '@/lib/calendarTypes'
+import type { Todo, TodoList } from '@/lib/types'
 import { isInRange, matchesCalendarItem, workspaceInitials } from '@/lib/calendarUtils'
 import type { Workspace } from '@/lib/types'
 import { workspaceHasFocus } from '@/lib/workspaceFocus'
@@ -212,12 +213,17 @@ export function useDailyListQuery(workspaceId: number | null, date: string, enab
   })
 }
 
-export function useTodosQuery(workspaceId: number | null, listId?: number | null, enabled = true) {
+export function useTodosQuery(
+  workspaceId: number | null,
+  listId?: number | null,
+  enabled = true,
+  occurrence?: string | null,
+) {
   const token = useAuthStore((state) => state.token)
 
   return useQuery({
-    queryKey: queryKeys.todos(workspaceId ?? 0, listId),
-    queryFn: () => fetchTodos(token!, workspaceId!, listId ?? undefined),
+    queryKey: queryKeys.todos(workspaceId ?? 0, listId, occurrence),
+    queryFn: () => fetchTodos(token!, workspaceId!, listId ?? undefined, occurrence ?? undefined),
     enabled: Boolean(token && workspaceId && listId && enabled),
     select: (data) => data.todos,
   })
@@ -234,40 +240,132 @@ export function useNotesQuery(workspaceId: number | null, listId?: number | null
   })
 }
 
+export type PlannerDayListData = {
+  id: number
+  name: string
+  kind: TodoList['kind']
+  periodScope: ReturnType<typeof listPeriodScope>
+  isRecurring: boolean
+  occurrenceDate: string | null
+  items: Todo[]
+}
+
+export type PlannerDayData = {
+  dailyListId: number | null
+  dailyLists: PlannerDayListData[]
+  items: Todo[]
+}
+
+async function buildPlannerListEntries(
+  token: string,
+  workspaceId: number,
+  lists: TodoList[],
+  todoCache: Map<string, Todo[]>,
+) {
+  return Promise.all(
+    lists.map(async (list) => {
+      const occurrence = list.list_date ?? undefined
+      const cacheKey = `${list.id}:${occurrence ?? ''}`
+      if (!todoCache.has(cacheKey)) {
+        const checkListData = await fetchTodos(token, workspaceId, list.id, occurrence)
+        todoCache.set(cacheKey, checkListData.todos)
+      }
+      return {
+        id: list.id,
+        name: list.name,
+        kind: list.kind,
+        periodScope: listPeriodScope(list),
+        isRecurring: Boolean(list.is_recurring),
+        occurrenceDate: occurrence ?? null,
+        items: todoCache.get(cacheKey) ?? [],
+      }
+    }),
+  )
+}
+
+export async function fetchPlannerDayData(
+  token: string,
+  workspaceId: number,
+  date: string,
+): Promise<PlannerDayData> {
+  await ensureDailyList(token, workspaceId, date)
+  const listsResponse = await fetchTodoLists(token, workspaceId, date)
+  const plannerLists = listsResponse.lists.filter(
+    (list) => list.kind === 'daily' || isPeriodicList(list),
+  )
+
+  const todoCache = new Map<string, Todo[]>()
+  const listData = await buildPlannerListEntries(token, workspaceId, plannerLists, todoCache)
+  const primaryList = listData[0]
+
+  return {
+    dailyListId: primaryList?.id ?? null,
+    dailyLists: listData,
+    items: primaryList?.items ?? [],
+  }
+}
+
+export async function fetchPlannerWeekData(
+  token: string,
+  workspaceId: number,
+  days: string[],
+): Promise<Record<string, PlannerDayData>> {
+  if (days.length === 0) return {}
+
+  const start = days[0]
+  const end = days[days.length - 1]
+  const byDay: Record<string, PlannerDayData> = {}
+  for (const day of days) {
+    byDay[day] = { dailyListId: null, dailyLists: [], items: [] }
+  }
+
+  const listsResponse = await fetchTodoLists(token, workspaceId, { start, end })
+  const plannerLists = listsResponse.lists.filter(
+    (list) => list.kind === 'daily' || isPeriodicList(list),
+  )
+
+  const todoCache = new Map<string, Todo[]>()
+  const listEntries = await buildPlannerListEntries(token, workspaceId, plannerLists, todoCache)
+
+  listEntries.forEach((entry, index) => {
+    const list = plannerLists[index]
+    const targetDays = daysInListSpan(list, days)
+
+    for (const day of targetDays) {
+      byDay[day]?.dailyLists.push(entry)
+    }
+  })
+
+  for (const day of days) {
+    const dayData = byDay[day]
+    dayData.dailyListId = dayData.dailyLists[0]?.id ?? null
+    dayData.items = dayData.dailyLists[0]?.items ?? []
+  }
+
+  return byDay
+}
+
 export function usePlannerDayQuery(workspaceId: number | null, date: string, enabled = true) {
   const token = useAuthStore((state) => state.token)
 
   return useQuery({
     queryKey: queryKeys.plannerDay(workspaceId ?? 0, date),
     enabled: Boolean(token && workspaceId && date && enabled),
-    queryFn: async () => {
-      const listsResponse = await fetchTodoLists(token!, workspaceId!, date)
-      const plannerLists = listsResponse.lists.filter(
-        (list) => list.kind === 'daily' || isPeriodicList(list),
-      )
+    queryFn: () => fetchPlannerDayData(token!, workspaceId!, date),
+    staleTime: 0,
+  })
+}
 
-      const listData = await Promise.all(
-        plannerLists.map(async (list) => {
-          const checkListData = await fetchTodos(token!, workspaceId!, list.id)
-          return {
-            id: list.id,
-            name: list.name,
-            kind: list.kind,
-            periodScope: listPeriodScope(list),
-            isRecurring: Boolean(list.is_recurring),
-            items: checkListData.todos,
-          }
-        }),
-      )
+export function usePlannerWeekQuery(workspaceId: number | null, days: string[], enabled = true) {
+  const token = useAuthStore((state) => state.token)
+  const start = days[0] ?? ''
+  const end = days[days.length - 1] ?? ''
 
-      const primaryList = listData[0]
-
-      return {
-        dailyListId: primaryList?.id ?? null,
-        dailyLists: listData,
-        items: primaryList?.items ?? [],
-      }
-    },
+  return useQuery({
+    queryKey: queryKeys.plannerWeek(workspaceId ?? 0, start, end),
+    enabled: Boolean(token && workspaceId && days.length > 0 && enabled),
+    queryFn: () => fetchPlannerWeekData(token!, workspaceId!, days),
+    staleTime: 0,
   })
 }
 
