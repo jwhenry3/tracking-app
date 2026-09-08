@@ -1,0 +1,227 @@
+{
+  "main": {
+    "id": "ea8565e7c29119e7",
+    "type": "split",
+    "children": [
+      {
+        "id": "a9f3869afd375760",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d8eae5f8df5faf07",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "wiki/06-competitor-comparison-strategy.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "06-competitor-comparison-strategy"
+            }
+          }
+        ]
+      },
+      {
+        "id": "53a1ca2448c186c3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "722d015998986e00",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e6d14c5ec2191906",
+    "type": "split",
+    "children": [
+      {
+        "id": "fa88372bd1bbc1af",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5bcfb9af769614a5",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "3c266e83ce8c622d",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "8b14d3d76c0ce6f3",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "bfb38afb0ce3ad7d",
+    "type": "split",
+    "children": [
+      {
+        "id": "a76e25ca45d21f85",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7452de25744f2ab2",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "wiki/06-competitor-comparison-strategy.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "942b84a544585323",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "wiki/06-competitor-comparison-strategy.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "b94d6670128b2393",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "fb5bcb0167630584",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "96ab5804725e2433",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "wiki/06-competitor-comparison-strategy.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "d8eae5f8df5faf07",
+  "lastOpenFiles": [
+    "Untitled 1.base",
+    "Untitled.base",
+    "wiki/06-competitor-comparison-strategy.md",
+    "wiki/07-pricing-strategy.md",
+    "wiki/05-ux-and-onboarding.md",
+    "wiki/04-product-features-and-architecture.md",
+    "wiki/03-monetization-and-pricing.md",
+    "wiki/02-marketing-strategy.md",
+    "wiki/01-executive-overview.md",
+    "Untitled.canvas",
+    "wiki/06-why-not-teams.md",
+    "wiki/Marketing Strategy.md",
+    "tracking_app_wiki",
+    "tracking_app_wiki.zip",
+    "zip.py",
+    "wiki/Pricing Concepts.md",
+    "wiki"
+  ]
+}
