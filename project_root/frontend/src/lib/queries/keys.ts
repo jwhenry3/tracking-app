@@ -8,6 +8,7 @@ export const queryKeys = {
     ['events', workspaceId, start ?? null, end ?? null] as const,
   income: (workspaceId: number, start?: string, end?: string) =>
     ['income', workspaceId, start ?? null, end ?? null] as const,
+  incomeSeries: (workspaceId: number) => ['income-series', workspaceId] as const,
   bills: (workspaceId: number, start?: string, end?: string) =>
     ['bills', workspaceId, start ?? null, end ?? null] as const,
   billSeries: (workspaceId: number, status?: string) =>

@@ -1,17 +1,21 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useMemo, useState } from 'react'
-import { Plus, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Wallet } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import { FinanceAnalyticsView } from '@/components/finance/FinanceAnalyticsView'
 import { FinanceTimelineView } from '@/components/finance/FinanceTimelineView'
 import { PayBillDialog } from '@/components/finance/PayBillDialog'
 import { PayExpenseDialog } from '@/components/finance/PayExpenseDialog'
-import { UntilNextIncomeView } from '@/components/finance/UntilNextIncomeView'
 import { FormField } from '@/components/forms/FormField'
 import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
-import { PageHeader, PageHeaderIconButton } from '@/components/layout/PageHeader'
+import {
+  PageHeader,
+  PageHeaderDivider,
+  PageHeaderIconButton,
+  PageHeaderTextButton,
+} from '@/components/layout/PageHeader'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
 import { entryTypeMeta } from '@/components/ops/EntryTypeIcon'
 import { Button } from '@/components/ui/button'
@@ -34,7 +38,7 @@ import { useWorkspacePermissions } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
 
 type FinanceFormTab = 'income' | 'bill' | 'expense'
-type FinancePageView = 'runway' | 'timeline' | 'analytics'
+type FinancePageView = 'timeline' | 'analytics'
 
 export function FinancesView({ view: pageView }: { view: FinancePageView }) {
   const { workspaceId } = useParams()
@@ -43,14 +47,16 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
   const queryClient = useQueryClient()
   const workspaceNumericId = workspaceId ? Number(workspaceId) : null
   const queriesEnabled = Boolean(token && workspaceNumericId)
-  const currentMonth = useMemo(() => monthRange(), [])
-  const extendedRange = useMemo(() => extendedFinanceRange(), [])
+  const [financeMonth, setFinanceMonth] = useState(() => new Date())
+
+  const monthWindow = useMemo(() => monthRange(financeMonth), [financeMonth])
+  const extendedRange = useMemo(() => extendedFinanceRange(5, 0, financeMonth), [financeMonth])
 
   const summaryQuery = useFinanceSummaryQuery(
     workspaceNumericId,
-    currentMonth.start,
-    currentMonth.end,
-    queriesEnabled,
+    monthWindow.start,
+    monthWindow.end,
+    queriesEnabled && pageView === 'analytics',
   )
   const incomeQuery = useIncomeQuery(
     workspaceNumericId,
@@ -191,31 +197,36 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
         <PageHeader
           icon={Wallet}
           title="Finances"
-          subtitle="Plan between paychecks, review the month, and track trends"
+          subtitle={monthWindow.label}
         >
+          <PageHeaderIconButton
+            icon={ChevronLeft}
+            label="Previous month"
+            onClick={() =>
+              setFinanceMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
+            }
+          />
+          <PageHeaderTextButton label="Today" onClick={() => setFinanceMonth(new Date())} />
+          <PageHeaderIconButton
+            icon={ChevronRight}
+            label="Next month"
+            onClick={() =>
+              setFinanceMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
+            }
+          />
+          <PageHeaderDivider />
           {canManageFinances ? (
           <PageHeaderIconButton icon={Plus} label="Add entry" onClick={() => startAdd('income')} />
           ) : null}
         </PageHeader>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto space-y-6 p-4">
-        {pageView === 'runway' ? (
-          <UntilNextIncomeView
-            income={income}
-            bills={bills}
-            expenses={expenses}
-            onEdit={startEdit}
-            onPay={startPay}
-            onPayExpense={startPayExpense}
-          />
-        ) : null}
-
+      <div className="min-h-0 flex-1 overflow-y-auto space-y-4 p-3 md:space-y-6 md:p-4">
         {pageView === 'timeline' ? (
           <FinanceTimelineView
-            monthLabel={currentMonth.label}
-            monthStart={currentMonth.start}
-            monthEnd={currentMonth.end}
+            monthLabel={monthWindow.label}
+            monthStart={monthWindow.start}
+            monthEnd={monthWindow.end}
             income={income}
             bills={bills}
             expenses={expenses}
@@ -227,6 +238,8 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
 
         {pageView === 'analytics' ? (
           <FinanceAnalyticsView
+            monthLabel={monthWindow.label}
+            monthDate={financeMonth}
             summary={summary}
             income={income}
             bills={bills}
@@ -263,9 +276,9 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
           <>
             <OpsTabs
               tabs={[
-                { id: 'income', label: 'Income', icon: entryTypeMeta.income.icon },
-                { id: 'bill', label: 'Bill', icon: entryTypeMeta.bill.icon },
-                { id: 'expense', label: 'Expense', icon: entryTypeMeta.expense.icon },
+                { id: 'income', label: 'Income', icon: entryTypeMeta.income.icon, iconClassName: entryTypeMeta.income.className },
+                { id: 'bill', label: 'Bill', icon: entryTypeMeta.bill.icon, iconClassName: entryTypeMeta.bill.className },
+                { id: 'expense', label: 'Expense', icon: entryTypeMeta.expense.icon, iconClassName: entryTypeMeta.expense.className },
               ]}
               activeTab={formTab}
               onChange={(tabId) => setFormTab(tabId as FinanceFormTab)}

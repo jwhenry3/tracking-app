@@ -8,6 +8,7 @@ import type {
   EventSeries,
   FinanceSummary,
   IncomeEntry,
+  IncomeSeries,
   Note,
   PlannerEvent,
   Todo,
@@ -434,6 +435,14 @@ export async function createIncome(
   )
 }
 
+export async function fetchIncomeSeries(token: string, workspaceId: number) {
+  return request<{ income: IncomeSeries[] }>(
+    `/api/workspaces/${workspaceId}/finance/income/series`,
+    {},
+    token,
+  )
+}
+
 export async function fetchBills(token: string, workspaceId: number, start?: string, end?: string) {
   const params = new URLSearchParams()
   if (start) params.set('start', start)
@@ -698,6 +707,14 @@ export async function createTodoList(
   return request<TodoList>(
     `/api/workspaces/${workspaceId}/todo-lists`,
     { method: 'POST', body: JSON.stringify(payload) },
+    token,
+  )
+}
+
+export async function deleteTodoList(token: string, workspaceId: number, listId: number) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/todo-lists/${listId}`,
+    { method: 'DELETE' },
     token,
   )
 }

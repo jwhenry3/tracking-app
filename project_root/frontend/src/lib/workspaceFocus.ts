@@ -9,7 +9,7 @@ export const WORKSPACE_FOCUS_OPTIONS = [
   {
     id: 'finances' as const,
     label: 'Finances',
-    description: 'Income runway, timeline, and analytics.',
+    description: 'Timeline and analytics.',
   },
 ]
 
@@ -57,10 +57,14 @@ export function isWorkspaceRouteAllowed(
   if (
     (relativePath === 'manage/bills' ||
       relativePath.startsWith('manage/bills/') ||
+      relativePath === 'manage/income' ||
+      relativePath.startsWith('manage/income/') ||
       relativePath === 'manage/expenses' ||
       relativePath.startsWith('manage/expenses/') ||
       relativePath === 'finances/manage/bills' ||
       relativePath.startsWith('finances/manage/bills/') ||
+      relativePath === 'finances/manage/income' ||
+      relativePath.startsWith('finances/manage/income/') ||
       relativePath === 'finances/manage/expenses' ||
       relativePath.startsWith('finances/manage/expenses/')) &&
     !workspaceHasFocus(workspace, 'finances')

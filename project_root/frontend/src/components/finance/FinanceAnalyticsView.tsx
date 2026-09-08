@@ -3,12 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   buildMonthlyTotals,
   expenseCategoryTotals,
+  monthKey,
   money,
   recentMonthKeys,
 } from '@/lib/financeUtils'
 import type { Bill, Expense, FinanceSummary, IncomeEntry } from '@/lib/types'
 
 type FinanceAnalyticsViewProps = {
+  monthLabel: string
+  monthDate: Date
   summary: FinanceSummary | null
   income: IncomeEntry[]
   bills: Bill[]
@@ -22,11 +25,22 @@ const chartColors = {
   net: '#2563eb',
 } as const
 
-export function FinanceAnalyticsView({ summary, income, bills, expenses }: FinanceAnalyticsViewProps) {
-  const monthKeys = recentMonthKeys(6)
+export function FinanceAnalyticsView({
+  monthLabel,
+  monthDate,
+  summary,
+  income,
+  bills,
+  expenses,
+}: FinanceAnalyticsViewProps) {
+  const monthKeys = recentMonthKeys(6, monthDate)
+  const selectedMonthKey = monthKey(monthDate.toISOString().slice(0, 10))
   const monthlyTotals = buildMonthlyTotals(income, bills, expenses, monthKeys)
   const categories = monthlyTotals.map((month) => ({ key: month.key, label: month.label }))
-  const categoryTotals = expenseCategoryTotals(expenses)
+  const monthExpenses = expenses.filter(
+    (item) => !item.skipped && monthKey(item.expense_date) === selectedMonthKey,
+  )
+  const categoryTotals = expenseCategoryTotals(monthExpenses)
 
   const latestMonth = monthlyTotals[monthlyTotals.length - 1]
   const averageNet = monthlyTotals.reduce((sum, month) => sum + month.net, 0) / Math.max(monthlyTotals.length, 1)
@@ -34,15 +48,15 @@ export function FinanceAnalyticsView({ summary, income, bills, expenses }: Finan
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-4">
-        <Card><CardHeader><CardTitle>Income this month</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.income_total ?? 0)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Bills this month</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.bills_due ?? 0)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Expenses this month</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.expense_total ?? 0)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Net</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.net ?? 0)}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Income · {monthLabel}</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.income_total ?? 0)}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Bills · {monthLabel}</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.bills_due ?? 0)}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Expenses · {monthLabel}</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.expense_total ?? 0)}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Net · {monthLabel}</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{money(summary?.net ?? 0)}</CardContent></Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Latest month net</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Selected month net</CardTitle></CardHeader>
           <CardContent className="text-2xl font-semibold">{money(latestMonth?.net ?? 0)}</CardContent>
         </Card>
         <Card>
@@ -50,9 +64,9 @@ export function FinanceAnalyticsView({ summary, income, bills, expenses }: Finan
           <CardContent className="text-2xl font-semibold">{money(averageNet)}</CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Tracked expenses</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Expenses · {monthLabel}</CardTitle></CardHeader>
           <CardContent className="text-2xl font-semibold">
-            {money(expenses.filter((item) => !item.skipped).reduce((sum, item) => sum + item.amount, 0))}
+            {money(monthExpenses.reduce((sum, item) => sum + item.amount, 0))}
           </CardContent>
         </Card>
       </div>
@@ -133,7 +147,7 @@ export function FinanceAnalyticsView({ summary, income, bills, expenses }: Finan
 
         <Card>
           <CardHeader>
-            <CardTitle>Expense categories</CardTitle>
+            <CardTitle>Expense categories · {monthLabel}</CardTitle>
           </CardHeader>
           <CardContent>
             {categoryTotals.length === 0 ? (

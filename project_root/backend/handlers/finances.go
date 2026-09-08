@@ -166,6 +166,19 @@ type billSeriesPayload struct {
 	LastPaidAt       *string `json:"last_paid_at"`
 }
 
+type incomeSeriesPayload struct {
+	ID               int     `json:"id"`
+	WorkspaceID      int     `json:"workspace_id"`
+	Title            string  `json:"title"`
+	Amount           float64 `json:"amount"`
+	EntryDate        string  `json:"entry_date"`
+	Recurrence       string  `json:"recurrence"`
+	IsRecurring      bool    `json:"is_recurring"`
+	SeriesAnchorDate string  `json:"series_anchor_date"`
+	Notes            string  `json:"notes"`
+	CreatedBy        int     `json:"created_by"`
+}
+
 func (h *FinanceHandler) ListIncome(c *gin.Context) {
 	workspaceID, _ := c.Get("workspaceID")
 	from, to, ok := parseFinanceRange(c)
@@ -239,6 +252,42 @@ func (h *FinanceHandler) ListIncome(c *gin.Context) {
 				Notes:            notes, CreatedBy: row.CreatedBy,
 			})
 		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"income": items})
+}
+
+func (h *FinanceHandler) ListIncomeSeries(c *gin.Context) {
+	workspaceID, _ := c.Get("workspaceID")
+
+	rows, err := h.DB.Query(`
+		SELECT id, workspace_id, title, amount, entry_date, COALESCE(recurrence, ''), COALESCE(notes, ''), created_by
+		FROM income_entries
+		WHERE workspace_id = ?
+		ORDER BY entry_date DESC, title ASC`, workspaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load income series"})
+		return
+	}
+	defer rows.Close()
+
+	items := []incomeSeriesPayload{}
+	for rows.Next() {
+		var row incomeSeriesRow
+		if err := rows.Scan(
+			&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.EntryDate,
+			&row.Recurrence, &row.Notes, &row.CreatedBy,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read income series"})
+			return
+		}
+		rule := recurrence.NormalizeRule(row.Recurrence)
+		items = append(items, incomeSeriesPayload{
+			ID: row.ID, WorkspaceID: row.WorkspaceID, Title: row.Title, Amount: row.Amount,
+			EntryDate: row.EntryDate.Format("2006-01-02"), Recurrence: rule,
+			IsRecurring: recurrence.IsRecurring(rule),
+			SeriesAnchorDate: row.EntryDate.Format("2006-01-02"), Notes: row.Notes, CreatedBy: row.CreatedBy,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"income": items})

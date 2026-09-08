@@ -8,6 +8,7 @@ type FormFieldProps = {
   type?: string
   placeholder?: string
   id?: string
+  required?: boolean
 }
 
 export function FormField({
@@ -17,6 +18,7 @@ export function FormField({
   type = 'text',
   placeholder,
   id,
+  required = true,
 }: FormFieldProps) {
   const fieldId = id ?? label.toLowerCase().replace(/\s+/g, '-')
 
@@ -29,7 +31,7 @@ export function FormField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        required
+        required={required}
       />
     </div>
   )

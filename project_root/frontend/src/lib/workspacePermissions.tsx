@@ -51,3 +51,10 @@ export function ManageActions({
   }
   return children
 }
+
+export function getManageableWorkspaces(
+  workspaces: Workspace[],
+  area: WorkspaceFocusArea,
+): Workspace[] {
+  return workspaces.filter((workspace) => canManageWorkspace(workspace, area))
+}

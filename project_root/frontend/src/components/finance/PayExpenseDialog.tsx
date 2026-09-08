@@ -151,7 +151,7 @@ export function PayExpenseDialog({
               id="pay-expense-date"
             />
             <div className="space-y-2">
-              <Label htmlFor="pay-expense-notes">Payment notes</Label>
+              <Label htmlFor="pay-expense-notes">Payment notes (optional)</Label>
               <Textarea
                 id="pay-expense-notes"
                 value={notes}

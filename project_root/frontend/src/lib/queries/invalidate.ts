@@ -14,7 +14,10 @@ export function invalidateWorkspaceEntity(
         queryClient.invalidateQueries({ queryKey: ['event-series', workspaceId] }),
       ])
     case 'income':
-      return queryClient.invalidateQueries({ queryKey: ['income', workspaceId] })
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['income', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['income-series', workspaceId] }),
+      ])
     case 'bill':
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bills', workspaceId] }),
@@ -63,6 +66,7 @@ export function invalidatePlannerFinance(queryClient: QueryClient, workspaceId: 
     queryClient.invalidateQueries({ queryKey: ['events', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['event-series', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['income', workspaceId] }),
+    queryClient.invalidateQueries({ queryKey: ['income-series', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['bills', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['bill-series', workspaceId] }),
     queryClient.invalidateQueries({ queryKey: ['expenses', workspaceId] }),

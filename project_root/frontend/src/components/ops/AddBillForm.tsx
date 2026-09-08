@@ -2,9 +2,11 @@ import { type FormEvent, useState } from 'react'
 
 import { FormField } from '@/components/forms/FormField'
 import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
+import { WorkspaceField } from '@/components/workspace/WorkspaceField'
 import { Button } from '@/components/ui/button'
 import { createBill } from '@/lib/api'
 import { buildRecurrenceRule } from '@/lib/recurrence'
+import { useCreateWorkspaceSelection } from '@/lib/useCreateWorkspaceSelection'
 
 type AddBillFormProps = {
   token: string
@@ -13,7 +15,11 @@ type AddBillFormProps = {
   onCreated?: () => void
 }
 
-export function AddBillForm({ token, workspaceId, defaultDate, onCreated }: AddBillFormProps) {
+export function AddBillForm({ token, workspaceId: defaultWorkspaceId, defaultDate, onCreated }: AddBillFormProps) {
+  const { creatableWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId } = useCreateWorkspaceSelection(
+    defaultWorkspaceId,
+    'finances',
+  )
   const today = defaultDate ?? new Date().toISOString().slice(0, 10)
   const [title, setTitle] = useState('')
   const [amount, setAmount] = useState('')
@@ -25,7 +31,7 @@ export function AddBillForm({ token, workspaceId, defaultDate, onCreated }: AddB
     event.preventDefault()
     if (!title.trim()) return
 
-    await createBill(token, workspaceId, {
+    await createBill(token, selectedWorkspaceId, {
       title: title.trim(),
       amount: Number(amount),
       date,
@@ -42,6 +48,11 @@ export function AddBillForm({ token, workspaceId, defaultDate, onCreated }: AddB
 
   return (
     <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+      <WorkspaceField
+        workspaces={creatableWorkspaces}
+        value={selectedWorkspaceId}
+        onChange={setSelectedWorkspaceId}
+      />
       <FormField label="Title" value={title} onChange={setTitle} id="manage-bill-title" />
       <FormField label="Amount" type="number" value={amount} onChange={setAmount} id="manage-bill-amount" />
       <FormField label="Due date" type="date" value={date} onChange={setDate} id="manage-bill-date" />

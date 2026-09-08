@@ -155,6 +155,32 @@ func (h *TodoHandler) CreateList(c *gin.Context) {
 	c.JSON(http.StatusCreated, list)
 }
 
+func (h *TodoHandler) DeleteList(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+	workspaceID, _ := c.Get("workspaceID")
+	listID := c.Param("listId")
+
+	result, err := h.DB.Exec(
+		"DELETE FROM todo_lists WHERE id = ? AND workspace_id = ?",
+		listID, workspaceID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete todo list"})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "todo list not found"})
+		return
+	}
+
+	h.broadcastTodo(workspaceID.(int), "todo_list", "deleted", gin.H{"id": listID})
+	c.JSON(http.StatusOK, gin.H{"message": "todo list deleted"})
+}
+
 func (h *TodoHandler) EnsureDailyList(c *gin.Context) {
 	workspaceID, _ := c.Get("workspaceID")
 	date := c.Param("date")

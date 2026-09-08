@@ -43,7 +43,7 @@ export function WeeklyPlannerGrid({
       <CardContent className="p-2">
         <div className="overflow-x-auto">
           <div
-            className="min-w-[640px] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]"
+            className="min-w-0 overflow-y-auto overscroll-y-contain md:min-w-[640px] [scrollbar-gutter:stable]"
             style={{ maxHeight: WEEK_GRID_HEIGHT }}
           >
             <div className="sticky top-0 z-10 mb-1.5 grid grid-cols-7 gap-1.5 bg-card pb-1.5">
@@ -66,7 +66,7 @@ export function WeeklyPlannerGrid({
             })}
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5 items-stretch pb-2">
+          <div className="hidden grid-cols-7 items-stretch gap-1.5 pb-2 md:grid">
             {days.map((day) => {
               const dayItems = scheduleByDay.get(day) ?? []
               const isSelected = selectedDay === day

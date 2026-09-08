@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { FormField } from '@/components/forms/FormField'
 import { OccurrenceScopePicker } from '@/components/forms/OccurrenceScopePicker'
 import { RecurrencePicker } from '@/components/forms/RecurrencePicker'
+import { WorkspaceField } from '@/components/workspace/WorkspaceField'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -25,6 +26,7 @@ import {
   type RecurrenceConfig,
 } from '@/lib/recurrence'
 import type { Bill, Expense, IncomeEntry, PlannerEvent } from '@/lib/types'
+import { useAuthStore } from '@/stores/authStore'
 
 export type EditableEntry =
   | { kind: 'event'; data: PlannerEvent }
@@ -42,6 +44,7 @@ type EditEntryFormProps = {
 }
 
 export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved, onDeleted }: EditEntryFormProps) {
+  const workspaces = useAuthStore((state) => state.workspaces)
   const isRecurring = entry.kind !== 'expense' && Boolean(getSeriesRule(entry))
 
   const [scope, setScope] = useState<OccurrenceScope>(defaultScope ?? (isRecurring ? 'this' : 'all'))
@@ -85,7 +88,7 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
         await patchEventOccurrence(token, workspaceId, entry.data, {
           scope: effectiveScope,
           title: title.trim(),
-          description,
+          description: description.trim() || undefined,
           start_at: `${date}T09:00:00Z`,
           end_at: `${date}T10:00:00Z`,
           recurrence: recurrenceRule,
@@ -96,7 +99,7 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
           title: title.trim(),
           amount: Number(amount),
           date,
-          notes,
+          notes: notes.trim() || undefined,
           recurrence: recurrenceRule,
         })
       } else if (entry.kind === 'bill') {
@@ -116,7 +119,7 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
           amount: Number(amount),
           date,
           category,
-          notes,
+          notes: notes.trim() || undefined,
         })
       }
       onSaved()
@@ -146,6 +149,8 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
 
   return (
     <form className="space-y-4" onSubmit={(event) => void handleSave(event)}>
+      <WorkspaceField workspaces={workspaces} value={workspaceId} readOnly />
+
       <OccurrenceScopePicker
         value={scope}
         onChange={setScope}
@@ -169,7 +174,7 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
 
       {entry.kind === 'event' ? (
         <div className="space-y-2">
-          <Label htmlFor="edit-entry-description">Description</Label>
+          <Label htmlFor="edit-entry-description">Description (optional)</Label>
           <Textarea
             id="edit-entry-description"
             value={description}
@@ -179,7 +184,7 @@ export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved
       ) : null}
 
       {entry.kind === 'income' || entry.kind === 'expense' ? (
-        <FormField label="Notes" value={notes} onChange={setNotes} id="edit-entry-notes" />
+        <FormField label="Notes (optional)" value={notes} onChange={setNotes} id="edit-entry-notes" required={false} />
       ) : null}
 
       {entry.kind === 'bill' || entry.kind === 'expense' ? (

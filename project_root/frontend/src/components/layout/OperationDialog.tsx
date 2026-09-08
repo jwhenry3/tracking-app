@@ -25,7 +25,7 @@ export function OperationDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn('max-w-2xl', className)}>
-        <div className="border-b px-6 py-4">
+        <div className="border-b px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">{title}</h2>
@@ -42,14 +42,14 @@ export function OperationDialog({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto p-6">{children}</div>
+        <div className="flex-1 overflow-auto p-4 sm:p-6">{children}</div>
       </DialogContent>
     </Dialog>
   )
 }
 
 type OpsTabsProps = {
-  tabs: Array<{ id: string; label: string; icon?: LucideIcon }>
+  tabs: Array<{ id: string; label: string; icon?: LucideIcon; iconClassName?: string }>
   activeTab: string
   onChange: (tabId: string) => void
 }
@@ -71,7 +71,14 @@ export function OpsTabs({ tabs, activeTab, onChange }: OpsTabsProps) {
                 : 'bg-muted text-muted-foreground hover:text-foreground',
             )}
           >
-            {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+            {Icon ? (
+              <Icon
+                className={cn(
+                  'h-3.5 w-3.5',
+                  activeTab === tab.id ? 'text-primary-foreground' : tab.iconClassName,
+                )}
+              />
+            ) : null}
             {tab.label}
           </button>
         )

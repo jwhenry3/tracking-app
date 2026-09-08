@@ -23,14 +23,16 @@ export function LoginPage() {
 
     try {
       await login(username, password)
-      navigate('/')
+      const { activeWorkspaceId, workspaces } = useAuthStore.getState()
+      const workspaceId = activeWorkspaceId ?? workspaces[0]?.id
+      navigate(workspaceId ? `/w/${workspaceId}/calendar` : '/', { replace: true })
     } catch {
       // handled in store
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-dvh items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Welcome back</CardTitle>

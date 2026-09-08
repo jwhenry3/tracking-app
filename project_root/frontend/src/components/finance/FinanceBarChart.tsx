@@ -77,7 +77,7 @@ export function FinanceGroupedBarChart({ title, categories, groups, className }:
       </div>
 
       <div className="overflow-x-auto">
-        <div className="flex min-w-[640px] items-end gap-4">
+        <div className="flex min-w-[28rem] items-end gap-4 md:min-w-[640px]">
           {categories.map((category) => (
             <div key={category.key} className="flex flex-1 flex-col items-center gap-2">
               <div className="flex h-40 w-full items-end justify-center gap-1">
@@ -149,7 +149,7 @@ export function FinanceLineChart({
     <div className={cn('space-y-4', className)}>
       <h4 className="text-sm font-medium">{title}</h4>
       <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[640px] w-full">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[28rem] w-full md:min-w-[640px]">
           <line
             x1={padding}
             x2={width - padding}

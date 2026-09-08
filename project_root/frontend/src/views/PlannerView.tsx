@@ -281,8 +281,8 @@ export function PlannerView({ mode }: PlannerViewProps) {
       <div
         className={cn(
           mode === 'weekly'
-            ? 'flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4'
-            : 'min-h-0 flex-1 overflow-y-auto space-y-6 p-4',
+            ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:gap-4 md:p-4'
+            : 'min-h-0 flex-1 overflow-y-auto space-y-4 p-3 md:space-y-6 md:p-4',
         )}
       >
         {mode === 'weekly' ? (

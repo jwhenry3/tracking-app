@@ -1,19 +1,21 @@
 import { type FormEvent, useState } from 'react'
 
 import { FormField } from '@/components/forms/FormField'
+import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { WorkspaceField } from '@/components/workspace/WorkspaceField'
 import { Button } from '@/components/ui/button'
-import { createExpense } from '@/lib/api'
+import { createIncome } from '@/lib/api'
+import { buildRecurrenceRule } from '@/lib/recurrence'
 import { useCreateWorkspaceSelection } from '@/lib/useCreateWorkspaceSelection'
 
-type AddExpenseFormProps = {
+type AddIncomeFormProps = {
   token: string
   workspaceId: number
   defaultDate?: string
   onCreated?: () => void
 }
 
-export function AddExpenseForm({ token, workspaceId: defaultWorkspaceId, defaultDate, onCreated }: AddExpenseFormProps) {
+export function AddIncomeForm({ token, workspaceId: defaultWorkspaceId, defaultDate, onCreated }: AddIncomeFormProps) {
   const { creatableWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId } = useCreateWorkspaceSelection(
     defaultWorkspaceId,
     'finances',
@@ -22,25 +24,26 @@ export function AddExpenseForm({ token, workspaceId: defaultWorkspaceId, default
   const [title, setTitle] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(today)
-  const [category, setCategory] = useState('general')
   const [notes, setNotes] = useState('')
+  const [recurrence, setRecurrence] = useState(defaultRecurrenceConfig)
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (!title.trim()) return
 
-    await createExpense(token, selectedWorkspaceId, {
+    await createIncome(token, selectedWorkspaceId, {
       title: title.trim(),
       amount: Number(amount),
       date,
-      category,
       notes: notes.trim() || undefined,
+      recurrence: buildRecurrenceRule(recurrence, date),
     })
 
     setTitle('')
     setAmount('')
     setDate(today)
     setNotes('')
+    setRecurrence(defaultRecurrenceConfig)
     onCreated?.()
   }
 
@@ -51,13 +54,13 @@ export function AddExpenseForm({ token, workspaceId: defaultWorkspaceId, default
         value={selectedWorkspaceId}
         onChange={setSelectedWorkspaceId}
       />
-      <FormField label="Title" value={title} onChange={setTitle} id="manage-expense-title" />
-      <FormField label="Amount" type="number" value={amount} onChange={setAmount} id="manage-expense-amount" />
-      <FormField label="Date" type="date" value={date} onChange={setDate} id="manage-expense-date" />
-      <FormField label="Category" value={category} onChange={setCategory} id="manage-expense-category" />
-      <FormField label="Notes (optional)" value={notes} onChange={setNotes} id="manage-expense-notes" required={false} />
+      <FormField label="Title" value={title} onChange={setTitle} id="manage-income-title" />
+      <FormField label="Amount" type="number" value={amount} onChange={setAmount} id="manage-income-amount" />
+      <FormField label="Date" type="date" value={date} onChange={setDate} id="manage-income-date" />
+      <FormField label="Notes (optional)" value={notes} onChange={setNotes} id="manage-income-notes" required={false} />
+      <RecurrencePicker value={recurrence} anchorDate={date} onChange={setRecurrence} />
       <Button type="submit" className="w-full">
-        Create expense
+        Create income
       </Button>
     </form>
   )

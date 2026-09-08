@@ -156,7 +156,7 @@ export function PayBillDialog({
               id="pay-bill-date"
             />
             <div className="space-y-2">
-              <Label htmlFor="pay-bill-notes">Payment notes</Label>
+              <Label htmlFor="pay-bill-notes">Payment notes (optional)</Label>
               <Textarea
                 id="pay-bill-notes"
                 value={notes}

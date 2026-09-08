@@ -16,7 +16,7 @@ export function PageHeader({ icon: Icon, title, subtitle, children, className }:
   return (
     <header
       className={cn(
-        'sticky top-0 z-10 flex items-center justify-between gap-4 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+        'sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:gap-4 md:px-4',
         className,
       )}
     >
@@ -32,7 +32,7 @@ export function PageHeader({ icon: Icon, title, subtitle, children, className }:
         </div>
       </div>
       {children ? (
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-0.5">
           {children}
         </div>
       ) : null}
@@ -53,7 +53,7 @@ export function PageHeaderIconButton({ icon: Icon, label, onClick, disabled }: P
       type="button"
       variant="ghost"
       size="sm"
-      className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+      className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground md:h-8 md:w-8"
       title={label}
       aria-label={label}
       onClick={onClick}
@@ -78,7 +78,7 @@ export function PageHeaderTextButton({
       type="button"
       variant="ghost"
       size="sm"
-      className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+      className="h-10 px-3 text-xs font-medium text-muted-foreground hover:text-foreground md:h-8 md:px-2.5"
       onClick={onClick}
       disabled={disabled}
     >

@@ -160,8 +160,30 @@
     @apply border-border outline-ring/50;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+
   body {
-    @apply bg-background text-foreground min-h-screen antialiased;
+    @apply bg-background text-foreground min-h-dvh antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  a,
+  [role='tab'],
+  [role='menuitem'] {
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']),
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 
   .markdown-content :where(h1, h2, h3, h4) {

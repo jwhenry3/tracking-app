@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import {
   ensureDailyList,
@@ -13,6 +13,7 @@ import {
   fetchExpenses,
   fetchFinanceSummary,
   fetchIncome,
+  fetchIncomeSeries,
   fetchMe,
   fetchMyInvites,
   fetchNotes,
@@ -22,7 +23,13 @@ import {
   fetchWorkspaceMembers,
   fetchWorkspaces,
 } from '@/lib/api'
+import { normalizeFinanceDate } from '@/lib/financeUtils'
 import { queryKeys } from '@/lib/queries/keys'
+import type { CalendarFocusFilter } from '@/lib/calendarFocusFilter'
+import type { CentralCalendarItem } from '@/lib/calendarTypes'
+import { isInRange, matchesCalendarItem, workspaceInitials } from '@/lib/calendarUtils'
+import type { Workspace } from '@/lib/types'
+import { workspaceHasFocus } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
 
 export function useWorkspaceParams() {
@@ -157,6 +164,17 @@ export function useExpensesQuery(workspaceId: number | null, enabled = true) {
   })
 }
 
+export function useIncomeSeriesQuery(workspaceId: number | null, enabled = true) {
+  const token = useAuthStore((state) => state.token)
+
+  return useQuery({
+    queryKey: queryKeys.incomeSeries(workspaceId ?? 0),
+    queryFn: () => fetchIncomeSeries(token!, workspaceId!),
+    enabled: Boolean(token && workspaceId && enabled),
+    select: (data) => data.income,
+  })
+}
+
 export function useFinanceSummaryQuery(
   workspaceId: number | null,
   start?: string,
@@ -265,11 +283,11 @@ export function useChatMessagesQuery(
 export function usePrefetchManageQueries(
   workspaceId: number | null,
   enabled = true,
-  sections: { bills?: boolean; events?: boolean; expenses?: boolean } = {},
+  sections: { bills?: boolean; events?: boolean; expenses?: boolean; income?: boolean } = {},
 ) {
   const queryClient = useQueryClient()
   const token = useAuthStore((state) => state.token)
-  const { bills = true, events = true, expenses = true } = sections
+  const { bills = true, events = true, expenses = true, income = true } = sections
 
   useEffect(() => {
     if (!enabled || !token || !workspaceId) return
@@ -291,11 +309,156 @@ export function usePrefetchManageQueries(
       })
     }
 
+    if (income) {
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.incomeSeries(workspaceId),
+        queryFn: () => fetchIncomeSeries(token, workspaceId),
+      })
+    }
+
     if (expenses) {
       void queryClient.prefetchQuery({
         queryKey: queryKeys.expenses(workspaceId),
         queryFn: () => fetchExpenses(token, workspaceId),
       })
     }
-  }, [enabled, token, workspaceId, queryClient, bills, events, expenses])
+  }, [enabled, token, workspaceId, queryClient, bills, events, expenses, income])
+}
+
+export function useCentralCalendarData(
+  workspaces: Workspace[],
+  range: { start: string; end: string },
+  focusFilter: CalendarFocusFilter,
+  selectedWorkspaceIds?: number[],
+) {
+  const token = useAuthStore((state) => state.token)
+
+  const visibleWorkspaces = useMemo(() => {
+    if (!selectedWorkspaceIds || selectedWorkspaceIds.length === 0) {
+      return workspaces
+    }
+    const allowed = new Set(selectedWorkspaceIds)
+    return workspaces.filter((workspace) => allowed.has(workspace.id))
+  }, [workspaces, selectedWorkspaceIds])
+
+  const enabled = Boolean(token && visibleWorkspaces.length)
+
+  const planningWorkspaces = visibleWorkspaces.filter(
+    (workspace) => workspaceHasFocus(workspace, 'planning') && focusFilter.events,
+  )
+  const financeWorkspaces = visibleWorkspaces.filter(
+    (workspace) => workspaceHasFocus(workspace, 'finances') && focusFilter.finances,
+  )
+
+  const eventQueries = useQueries({
+    queries: planningWorkspaces.map((workspace) => ({
+      queryKey: queryKeys.events(workspace.id, range.start, range.end),
+      queryFn: () => fetchEvents(token!, workspace.id, range.start, range.end),
+      enabled,
+    })),
+  })
+
+  const incomeQueries = useQueries({
+    queries: financeWorkspaces.map((workspace) => ({
+      queryKey: queryKeys.income(workspace.id, range.start, range.end),
+      queryFn: () => fetchIncome(token!, workspace.id, range.start, range.end),
+      enabled,
+    })),
+  })
+
+  const billQueries = useQueries({
+    queries: financeWorkspaces.map((workspace) => ({
+      queryKey: queryKeys.bills(workspace.id, range.start, range.end),
+      queryFn: () => fetchBills(token!, workspace.id, range.start, range.end),
+      enabled,
+    })),
+  })
+
+  const expenseQueries = useQueries({
+    queries: financeWorkspaces.map((workspace) => ({
+      queryKey: queryKeys.expenses(workspace.id),
+      queryFn: () => fetchExpenses(token!, workspace.id),
+      enabled,
+    })),
+  })
+
+  const calendarItems = useMemo(() => {
+    const items: CentralCalendarItem[] = []
+
+    planningWorkspaces.forEach((workspace, index) => {
+      const events = eventQueries[index]?.data?.events ?? []
+      for (const event of events) {
+        items.push({
+          ...event,
+          kind: 'event',
+          date: event.start_at.slice(0, 10),
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        })
+      }
+    })
+
+    financeWorkspaces.forEach((workspace, index) => {
+      const income = incomeQueries[index]?.data?.income ?? []
+      for (const item of income) {
+        items.push({
+          ...item,
+          kind: 'income',
+          date: normalizeFinanceDate(item.entry_date),
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        })
+      }
+
+      const bills = billQueries[index]?.data?.bills ?? []
+      for (const item of bills) {
+        items.push({
+          ...item,
+          kind: 'bill',
+          date: normalizeFinanceDate(item.due_date),
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        })
+      }
+
+      const expenses = (expenseQueries[index]?.data?.expenses ?? []).filter((expense) =>
+        isInRange(normalizeFinanceDate(expense.expense_date), range.start, range.end),
+      )
+      for (const item of expenses) {
+        items.push({
+          ...item,
+          kind: 'expense',
+          date: normalizeFinanceDate(item.expense_date),
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        })
+      }
+    })
+
+    return items.filter((item) => matchesCalendarItem(item, focusFilter))
+  }, [
+    planningWorkspaces,
+    financeWorkspaces,
+    eventQueries,
+    incomeQueries,
+    billQueries,
+    expenseQueries,
+    range.end,
+    range.start,
+    focusFilter,
+  ])
+
+  const isLoading =
+    eventQueries.some((query) => query.isLoading) ||
+    incomeQueries.some((query) => query.isLoading) ||
+    billQueries.some((query) => query.isLoading) ||
+    expenseQueries.some((query) => query.isLoading)
+
+  return {
+    calendarItems,
+    isLoading,
+    workspaceLabels: Object.fromEntries(
+      visibleWorkspaces.map((workspace) => [workspace.id, workspaceInitials(workspace.name)]),
+    ),
+  }
 }

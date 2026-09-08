@@ -4,15 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 import { ThemeSwitcher } from '@/components/layout/ThemeSwitcher'
 import { UserAvatar } from '@/components/profile/UserAvatar'
 import { getUserDisplayName } from '@/lib/userProfile'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 
 type UserMenuProps = {
   connected: boolean
   onOpenSettings: () => void
   onLogout: () => void
+  variant?: 'rail' | 'header'
 }
 
-export function UserMenu({ connected, onOpenSettings, onLogout }: UserMenuProps) {
+export function UserMenu({ connected, onOpenSettings, onLogout, variant = 'rail' }: UserMenuProps) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const token = useAuthStore((s) => s.token)
@@ -46,15 +48,20 @@ export function UserMenu({ connected, onOpenSettings, onLogout }: UserMenuProps)
 
   const resolvedDisplayName = getUserDisplayName({ display_name: displayName, username })
 
+  const isHeader = variant === 'header'
+
   return (
-    <div ref={menuRef} className="relative flex justify-center">
+    <div ref={menuRef} className={cn('relative flex', isHeader ? 'justify-end' : 'justify-center')}>
       <button
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
         title={resolvedDisplayName}
         onClick={() => setOpen((current) => !current)}
-        className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-white/10 text-sm transition hover:bg-white/20"
+        className={cn(
+          'flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-sm transition',
+          isHeader ? 'bg-muted hover:bg-muted/80' : 'bg-white/10 hover:bg-white/20',
+        )}
       >
         <UserAvatar
           token={token}
@@ -68,7 +75,10 @@ export function UserMenu({ connected, onOpenSettings, onLogout }: UserMenuProps)
       {open ? (
         <div
           role="menu"
-          className="absolute left-full top-0 z-50 ml-2 w-72 rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg"
+          className={cn(
+            'absolute z-50 w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg',
+            isHeader ? 'right-0 top-full mt-2' : 'left-full top-0 ml-2',
+          )}
         >
           <div className="border-b border-white/10 px-3 py-2">
             <p className="truncate text-sm font-medium">{resolvedDisplayName}</p>

@@ -98,6 +98,7 @@ func main() {
 
 			ws.GET("/finance/summary", financeHandler.Summary)
 			ws.GET("/finance/income", financeHandler.ListIncome)
+			ws.GET("/finance/income/series", financeHandler.ListIncomeSeries)
 			ws.POST("/finance/income", financeHandler.CreateIncome)
 			ws.PATCH("/finance/income/:incomeId/occurrences/:occurrenceAt", financeHandler.PatchIncomeOccurrence)
 			ws.DELETE("/finance/income/:incomeId", financeHandler.DeleteIncome)
@@ -113,6 +114,7 @@ func main() {
 
 			ws.GET("/todo-lists", todoHandler.ListLists)
 			ws.POST("/todo-lists", todoHandler.CreateList)
+			ws.DELETE("/todo-lists/:listId", todoHandler.DeleteList)
 			ws.GET("/todo-lists/daily/:date", todoHandler.EnsureDailyList)
 			ws.GET("/todos", todoHandler.ListTodos)
 			ws.POST("/todos", todoHandler.CreateTodo)

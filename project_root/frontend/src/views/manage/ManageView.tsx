@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { ManageBillsPanel } from '@/views/manage/ManageBillsPanel'
 import { ManageEventsPanel } from '@/views/manage/ManageEventsPanel'
 import { ManageExpensesPanel } from '@/views/manage/ManageExpensesPanel'
+import { ManageIncomePanel } from '@/views/manage/ManageIncomePanel'
 
 export function ManageView({ tab }: { tab: ManageTab }) {
   const navigate = useNavigate()
@@ -36,11 +37,13 @@ export function ManageView({ tab }: { tab: ManageTab }) {
   const showBills = isManageTabAllowed(workspace, 'bills')
   const showEvents = isManageTabAllowed(workspace, 'events')
   const showExpenses = isManageTabAllowed(workspace, 'expenses')
+  const showIncome = isManageTabAllowed(workspace, 'income')
 
   usePrefetchManageQueries(workspace?.id ?? null, enabled, {
     bills: showBills,
     events: showEvents,
     expenses: showExpenses,
+    income: showIncome,
   })
 
   useEffect(() => {
@@ -55,15 +58,15 @@ export function ManageView({ tab }: { tab: ManageTab }) {
   }
 
   const subtitle =
-    showBills || showExpenses
-      ? 'Edit events, bills, and expenses'
+    showBills || showExpenses || showIncome
+      ? 'Edit events, income, bills, and expenses'
       : 'Edit events'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader icon={Settings2} title="Manage" subtitle={subtitle} />
 
-      <div className="border-b px-4 py-3">
+      <div className="border-b px-3 py-3 md:px-4">
         <MaterialTabs
           activeTab={tab}
           onChange={(value) => switchTab(value as ManageTab)}
@@ -75,6 +78,11 @@ export function ManageView({ tab }: { tab: ManageTab }) {
         {showEvents ? (
           <div className={cn('flex min-h-0 flex-1 flex-col', tab !== 'events' && 'hidden')}>
             <ManageEventsPanel />
+          </div>
+        ) : null}
+        {showIncome ? (
+          <div className={cn('flex min-h-0 flex-1 flex-col', tab !== 'income' && 'hidden')}>
+            <ManageIncomePanel />
           </div>
         ) : null}
         {showBills ? (

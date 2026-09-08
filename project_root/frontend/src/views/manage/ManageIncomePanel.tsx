@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
-import { AddExpenseForm } from '@/components/ops/AddExpenseForm'
+import { AddIncomeForm } from '@/components/ops/AddIncomeForm'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
 import { EntryTypeTitle } from '@/components/ops/EntryTypeIcon'
 import {
@@ -17,82 +17,75 @@ import {
 } from '@/components/manage/ManageTable'
 import { ManageActions } from '@/lib/workspacePermissions'
 import { OperationDialog } from '@/components/layout/OperationDialog'
-import { formatDayLabel, money } from '@/lib/financeUtils'
-import { expenseToEditable } from '@/lib/manageUtils'
+import { describeRecurrence } from '@/lib/recurrence'
+import { money } from '@/lib/financeUtils'
+import { incomeSeriesToIncome } from '@/lib/manageUtils'
 import { invalidatePlannerFinance } from '@/lib/queries/invalidate'
-import { useExpensesQuery, useWorkspaceParams } from '@/lib/queries/hooks'
-import type { Expense } from '@/lib/types'
+import { useIncomeSeriesQuery, useWorkspaceParams } from '@/lib/queries/hooks'
+import type { IncomeSeries } from '@/lib/types'
 
-export function ManageExpensesPanel() {
+export function ManageIncomePanel() {
   const queryClient = useQueryClient()
   const { token, workspaceId, enabled: queriesEnabled } = useWorkspaceParams()
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  const expensesQuery = useExpensesQuery(workspaceId, queriesEnabled)
-  const expenses = useMemo(
-    () =>
-      [...(expensesQuery.data ?? [])].sort(
-        (a, b) => a.expense_date.localeCompare(b.expense_date) || a.title.localeCompare(b.title),
-      ),
-    [expensesQuery.data],
-  )
-  const showLoading = expensesQuery.isPending && expenses.length === 0
+  const incomeQuery = useIncomeSeriesQuery(workspaceId, queriesEnabled)
+  const income = incomeQuery.data ?? []
+  const showLoading = incomeQuery.isPending && income.length === 0
 
   async function refresh() {
     if (!workspaceId) return
     await invalidatePlannerFinance(queryClient, workspaceId)
   }
 
-  function openEdit(expense: Expense) {
-    setEditEntry(expenseToEditable(expense))
+  function openEdit(series: IncomeSeries) {
+    setEditEntry({ kind: 'income', data: incomeSeriesToIncome(series) })
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-end border-b px-4 py-3">
         <ManageActions area="finances">
-          <ManageAddButton label="Add expense" onClick={() => setAddOpen(true)} />
+          <ManageAddButton label="Add income" onClick={() => setAddOpen(true)} />
         </ManageActions>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
         {showLoading ? (
-          <p className="text-sm text-muted-foreground">Loading expenses…</p>
-        ) : expenses.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No expenses yet.</p>
+          <p className="text-sm text-muted-foreground">Loading income sources…</p>
+        ) : income.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No income sources yet.</p>
         ) : (
           <ManageTable>
             <ManageTableHead>
               <ManageTableTh>Title</ManageTableTh>
               <ManageTableTh>Amount</ManageTableTh>
               <ManageTableTh>Date</ManageTableTh>
-              <ManageTableTh>Category</ManageTableTh>
+              <ManageTableTh>Recurrence</ManageTableTh>
               <ManageTableTh>Notes</ManageTableTh>
-              <ManageTableTh>Last paid</ManageTableTh>
               <ManageTableTh className="w-12 text-right">Actions</ManageTableTh>
             </ManageTableHead>
             <ManageTableBody>
-              {expenses.map((expense) => (
-                <ManageTableRow key={expense.id}>
+              {income.map((entry) => (
+                <ManageTableRow key={entry.id}>
                   <ManageTableTd className="max-w-[220px]">
-                    <EntryTypeTitle kind="expense" title={expense.title} />
+                    <EntryTypeTitle kind="income" title={entry.title} />
                   </ManageTableTd>
-                  <ManageTableTd>{money(expense.amount)}</ManageTableTd>
-                  <ManageTableTd className="whitespace-nowrap">{expense.expense_date}</ManageTableTd>
-                  <ManageTableTd>{expense.category || '—'}</ManageTableTd>
+                  <ManageTableTd>{money(entry.amount)}</ManageTableTd>
+                  <ManageTableTd className="whitespace-nowrap">{entry.entry_date}</ManageTableTd>
                   <ManageTableTd className="max-w-[200px] truncate text-muted-foreground">
-                    {expense.notes || '—'}
+                    {describeRecurrence(entry.recurrence, entry.entry_date)}
                   </ManageTableTd>
-                  <ManageTableTd className="whitespace-nowrap text-muted-foreground">
-                    {expense.paid && expense.paid_at ? formatDayLabel(expense.paid_at) : 'Never'}
+                  <ManageTableTd className="max-w-[200px] truncate text-muted-foreground">
+                    {entry.notes || '—'}
                   </ManageTableTd>
                   <ManageTableTd className="text-right">
                     <ManageActions area="finances">
                       <ManageIconButton
                         icon={Pencil}
-                        label="Edit expense"
-                        onClick={() => openEdit(expense)}
+                        label="Edit income"
+                        onClick={() => openEdit(entry)}
                       />
                     </ManageActions>
                   </ManageTableTd>
@@ -106,11 +99,11 @@ export function ManageExpensesPanel() {
       <OperationDialog
         open={addOpen}
         onOpenChange={setAddOpen}
-        title="Add expense"
-        description="Create a new expense."
+        title="Add income"
+        description="Create a new income source."
       >
         {token && workspaceId ? (
-          <AddExpenseForm
+          <AddIncomeForm
             token={token}
             workspaceId={workspaceId}
             onCreated={() => {
@@ -126,13 +119,15 @@ export function ManageExpensesPanel() {
         onOpenChange={(open) => {
           if (!open) setEditEntry(null)
         }}
-        title="Edit expense"
+        title="Edit income"
+        description="Changes apply to the income series."
       >
         {editEntry && token && workspaceId ? (
           <EditEntryForm
             token={token}
             workspaceId={workspaceId}
             entry={editEntry}
+            defaultScope="all"
             onSaved={() => {
               setEditEntry(null)
               void refresh()

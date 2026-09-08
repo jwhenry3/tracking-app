@@ -150,7 +150,7 @@ export function FinanceTimelineView({
                               <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <EntryTypeIcon kind={item.kind} />
+                                    <EntryTypeIcon kind={item.kind} variant="badge" />
                                     <p className="font-medium">{item.title}</p>
                                     {timelineShowPastDueBadge(item) ? (
                                       <Badge className={pastDueBadgeClass}>Past due</Badge>

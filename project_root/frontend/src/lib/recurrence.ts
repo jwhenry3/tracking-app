@@ -8,11 +8,16 @@ export type RecurrencePreset =
   | 'weekly'
   | 'weekdays'
   | 'monthly_day'
+  | 'monthly_1_15'
+  | 'monthly_15_last'
   | 'monthly_weekday'
   | 'yearly'
   | 'custom'
 
 export type MonthlyRepeatMode = 'day_of_month' | 'day_of_week'
+
+/** Day of month (1–31), or -1 for the last day of the month. */
+export type MonthDay = number
 
 export type RecurrenceConfig = {
   preset: RecurrencePreset
@@ -20,7 +25,9 @@ export type RecurrenceConfig = {
   interval: number
   weeklyDays: number[]
   monthlyMode: MonthlyRepeatMode
+  monthlyDays: MonthDay[]
   monthlyWeekdayPosition: number
+  adjustWeekendPrevious: boolean
   endType: RecurrenceEndType
   count: number
   until: string
@@ -34,7 +41,9 @@ export const defaultRecurrenceConfig: RecurrenceConfig = {
   interval: 1,
   weeklyDays: [],
   monthlyMode: 'day_of_month',
+  monthlyDays: [],
   monthlyWeekdayPosition: 1,
+  adjustWeekendPrevious: false,
   endType: 'never',
   count: 13,
   until: '',
@@ -66,6 +75,8 @@ export function getRecurrencePresetOptions(anchorDate: string): PresetOption[] {
     { id: 'weekly', label: `Weekly on ${weekday}` },
     { id: 'weekdays', label: 'Every weekday (Monday to Friday)' },
     { id: 'monthly_day', label: `Monthly on day ${dayOfMonth}` },
+    { id: 'monthly_1_15', label: 'Twice monthly on the 1st and 15th' },
+    { id: 'monthly_15_last', label: 'Twice monthly on the 15th and last day' },
     { id: 'monthly_weekday', label: `Monthly on the ${monthlyWeekday}` },
     { id: 'yearly', label: `Annually on ${monthDay}` },
     { id: 'custom', label: 'Custom...' },
@@ -101,7 +112,35 @@ export function applyRecurrencePreset(
     case 'weekdays':
       return { ...base, frequency: 'weekly', interval: 1, weeklyDays: [1, 2, 3, 4, 5], monthlyMode: 'day_of_month' }
     case 'monthly_day':
-      return { ...base, frequency: 'monthly', interval: 1, weeklyDays: [], monthlyMode: 'day_of_month' }
+      return {
+        ...base,
+        frequency: 'monthly',
+        interval: 1,
+        weeklyDays: [],
+        monthlyMode: 'day_of_month',
+        monthlyDays: [date.getDate()],
+        adjustWeekendPrevious: false,
+      }
+    case 'monthly_1_15':
+      return {
+        ...base,
+        frequency: 'monthly',
+        interval: 1,
+        weeklyDays: [],
+        monthlyMode: 'day_of_month',
+        monthlyDays: [1, 15],
+        adjustWeekendPrevious: false,
+      }
+    case 'monthly_15_last':
+      return {
+        ...base,
+        frequency: 'monthly',
+        interval: 1,
+        weeklyDays: [],
+        monthlyMode: 'day_of_month',
+        monthlyDays: [15, -1],
+        adjustWeekendPrevious: true,
+      }
     case 'monthly_weekday':
       return {
         ...base,
@@ -161,7 +200,13 @@ export function buildRecurrenceRule(config: RecurrenceConfig, anchorDate: string
         : config.monthlyWeekdayPosition
       parts.push(`BYDAY=${position}${weekdayCodes[weekday]}`)
     } else {
-      parts.push(`BYMONTHDAY=${parseAnchorDate(anchorDate).getDate()}`)
+      const days = config.monthlyDays.length > 0
+        ? config.monthlyDays
+        : [parseAnchorDate(anchorDate).getDate()]
+      parts.push(`BYMONTHDAY=${formatMonthDayList(days)}`)
+    }
+    if (config.adjustWeekendPrevious) {
+      parts.push('X-ADJUST-WEEKEND=PREVIOUS')
     }
   }
 
@@ -181,19 +226,8 @@ export function parseRecurrenceRule(rule: string, anchorDate: string): Recurrenc
     return { ...defaultRecurrenceConfig }
   }
 
-  if (rule.includes('X-ADJUST-WEEKEND=PREVIOUS') && rule.includes('BYMONTHDAY=15,-1')) {
-    return {
-      ...defaultRecurrenceConfig,
-      preset: 'custom',
-      frequency: 'monthly',
-      interval: 1,
-      monthlyMode: 'day_of_month',
-      endType: 'never',
-      sourceRule: rule,
-    }
-  }
-
   const parts = parseRuleParts(rule)
+  const adjustWeekendPrevious = rule.toUpperCase().includes('X-ADJUST-WEEKEND=PREVIOUS')
   const freq = (parts.FREQ ?? '').toLowerCase() as RecurrenceFrequency
   const interval = Number(parts.INTERVAL ?? 1)
   const endType: RecurrenceEndType = parts.COUNT ? 'count' : parts.UNTIL ? 'until' : 'never'
@@ -209,14 +243,20 @@ export function parseRecurrenceRule(rule: string, anchorDate: string): Recurrenc
   }
 
   let monthlyMode: MonthlyRepeatMode = 'day_of_month'
+  let monthlyDays: MonthDay[] = []
   let monthlyWeekdayPosition = 1
-  if (freq === 'monthly' && parts.BYDAY && !parts.BYMONTHDAY) {
-    monthlyMode = 'day_of_week'
-    const token = parts.BYDAY.split(',')[0]
-    monthlyWeekdayPosition = parseInt(token, 10)
-    const weekdayCode = token.replace(/-?\d+/g, '')
-    const weekday = weekdayCodes.indexOf(weekdayCode as typeof weekdayCodes[number])
-    if (weekday >= 0) weeklyDays = [weekday]
+  if (freq === 'monthly') {
+    if (parts.BYMONTHDAY) {
+      monthlyMode = 'day_of_month'
+      monthlyDays = parseMonthDayList(parts.BYMONTHDAY)
+    } else if (parts.BYDAY) {
+      monthlyMode = 'day_of_week'
+      const token = parts.BYDAY.split(',')[0]
+      monthlyWeekdayPosition = parseInt(token, 10)
+      const weekdayCode = token.replace(/-?\d+/g, '')
+      const weekday = weekdayCodes.indexOf(weekdayCode as typeof weekdayCodes[number])
+      if (weekday >= 0) weeklyDays = [weekday]
+    }
   }
 
   const config: RecurrenceConfig = {
@@ -225,7 +265,9 @@ export function parseRecurrenceRule(rule: string, anchorDate: string): Recurrenc
     interval,
     weeklyDays,
     monthlyMode,
+    monthlyDays,
     monthlyWeekdayPosition,
+    adjustWeekendPrevious,
     endType,
     count,
     until,
@@ -243,16 +285,12 @@ export function describeRecurrence(rule: string, anchorDate?: string): string {
     return 'Does not repeat'
   }
 
-  if (rule.includes('X-ADJUST-WEEKEND=PREVIOUS') && rule.includes('BYMONTHDAY=15,-1')) {
-    return 'Twice monthly on the 15th and last day (moved to previous weekday if weekend)'
-  }
-
   const anchor = anchorDate ?? new Date().toISOString().slice(0, 10)
   const config = parseRecurrenceRule(rule, anchor)
   const presetLabel = getRecurrencePresetOptions(anchor).find((option) => option.id === config.preset)?.label
 
   if (config.preset !== 'custom' && presetLabel) {
-    return appendEndDescription(presetLabel, config)
+    return appendEndDescription(appendWeekendAdjustment(presetLabel, config), config)
   }
 
   const parts = parseRuleParts(rule)
@@ -277,13 +315,16 @@ export function describeRecurrence(rule: string, anchorDate?: string): string {
 
   if (freq === 'monthly') {
     if (parts.BYMONTHDAY) {
-      return appendEndDescription(`Monthly on day ${parts.BYMONTHDAY}`, config)
+      const label = describeMonthDayRecurrence(parts.BYMONTHDAY, interval)
+      return appendEndDescription(appendWeekendAdjustment(label, config), config)
     }
     if (parts.BYDAY) {
       const date = parseAnchorDate(anchor)
-      return appendEndDescription(`Monthly on the ${describeMonthlyWeekdayLabel(date)}`, config)
+      const label = `Monthly on the ${describeMonthlyWeekdayLabel(date)}`
+      return appendEndDescription(label, config)
     }
-    return appendEndDescription(interval > 1 ? `Every ${interval} months` : 'Monthly', config)
+    const label = interval > 1 ? `Every ${interval} months` : 'Monthly'
+    return appendEndDescription(label, config)
   }
 
   if (freq === 'yearly') {
@@ -382,8 +423,17 @@ function detectPreset(
   }
 
   if (config.frequency === 'monthly' && config.interval === 1) {
-    if (parts.BYMONTHDAY && !parts.BYMONTHDAY.includes(',')) {
-      return 'monthly_day'
+    if (parts.BYMONTHDAY) {
+      const days = parseMonthDayList(parts.BYMONTHDAY)
+      if (days.length === 1 && days[0] > 0) {
+        return 'monthly_day'
+      }
+      if (days.length === 2 && days.includes(1) && days.includes(15) && !days.includes(-1)) {
+        return 'monthly_1_15'
+      }
+      if (days.length === 2 && days.includes(15) && days.includes(-1)) {
+        return 'monthly_15_last'
+      }
     }
     if (parts.BYDAY && config.monthlyMode === 'day_of_week') {
       return 'monthly_weekday'
@@ -422,6 +472,67 @@ function appendEndDescription(label: string, config: RecurrenceConfig) {
     return `${label}, until ${config.until}`
   }
   return label
+}
+
+function appendWeekendAdjustment(label: string, config: RecurrenceConfig) {
+  if (!config.adjustWeekendPrevious) {
+    return label
+  }
+  return `${label} (moved to previous weekday if weekend)`
+}
+
+export function parseMonthDayList(raw: string): MonthDay[] {
+  return raw
+    .split(',')
+    .map((token) => Number.parseInt(token.trim(), 10))
+    .filter((day) => day === -1 || (day >= 1 && day <= 31))
+}
+
+export function formatMonthDayList(days: MonthDay[]): string {
+  const positive = days.filter((day) => day > 0).sort((a, b) => a - b)
+  const includesLast = days.includes(-1)
+  return includesLast ? [...positive, -1].join(',') : positive.join(',')
+}
+
+export function describeMonthDay(day: MonthDay): string {
+  if (day === -1) {
+    return 'last day'
+  }
+  return `${day}${ordinalSuffix(day)}`
+}
+
+export function describeMonthDayRecurrence(raw: string, interval = 1): string {
+  const days = parseMonthDayList(raw)
+  if (days.length === 0) {
+    return interval > 1 ? `Every ${interval} months` : 'Monthly'
+  }
+
+  const labels = days.map(describeMonthDay)
+  const prefix = interval > 1 ? `Every ${interval} months on the` : 'Monthly on the'
+
+  if (labels.length === 1) {
+    return `${prefix} ${labels[0]}`
+  }
+  if (labels.length === 2) {
+    return `${prefix} ${labels[0]} and ${labels[1]}`
+  }
+  return `${prefix} ${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`
+}
+
+function ordinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) {
+    return 'th'
+  }
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
 }
 
 export { weekdayCodes, weekdayLabels }

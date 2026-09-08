@@ -1,4 +1,4 @@
-import type { Bill, BillSeries, EventSeries, Expense, PlannerEvent } from '@/lib/types'
+import type { Bill, BillSeries, EventSeries, Expense, IncomeSeries, PlannerEvent } from '@/lib/types'
 
 export function billSeriesToBill(series: BillSeries): Bill {
   const anchor = series.series_anchor_date ?? series.due_date
@@ -44,4 +44,22 @@ export function eventSeriesToPlannerEvent(series: EventSeries): PlannerEvent {
 
 export function expenseToEditable(expense: Expense) {
   return { kind: 'expense' as const, data: expense }
+}
+
+export function incomeSeriesToIncome(series: IncomeSeries) {
+  const anchor = series.series_anchor_date ?? series.entry_date
+  return {
+    series_id: series.id,
+    occurrence_id: `${series.id}:${anchor}`,
+    id: series.id,
+    workspace_id: series.workspace_id,
+    title: series.title,
+    amount: series.amount,
+    entry_date: anchor,
+    recurrence: series.recurrence,
+    is_recurring: series.is_recurring,
+    series_anchor_date: anchor,
+    notes: series.notes,
+    created_by: series.created_by,
+  }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 
 import { MaterialTabs } from '@/components/layout/MaterialTabs'
 import { CheckListToggleButton } from '@/components/planner/CheckListToggleButton'
@@ -31,6 +31,7 @@ type PlannerDayPanelProps = {
   sectionLayout?: 'stacked' | 'tabs'
   onToggleCheckLists: () => void
   onAdd?: () => void
+  onClose?: () => void
   onEdit: (entry: EditableEntry) => void
   onPay: (bill: Bill) => void
   onPayExpense: (expense: Expense) => void
@@ -47,6 +48,7 @@ export function PlannerDayPanel({
   sectionLayout = 'stacked',
   onToggleCheckLists,
   onAdd,
+  onClose,
   onEdit,
   onPay,
   onPayExpense,
@@ -82,6 +84,19 @@ export function PlannerDayPanel({
         <div className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-base">{dayLabel}</CardTitle>
           <div className="flex items-center gap-1">
+            {onClose ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                title="Close day"
+                aria-label="Close day"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : null}
             <CheckListToggleButton
               visible={checkListsVisible}
               label={dayLabel}

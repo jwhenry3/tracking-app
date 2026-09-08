@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { AddBillForm } from '@/components/ops/AddBillForm'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
+import { EntryTypeTitle } from '@/components/ops/EntryTypeIcon'
 import {
   ManageAddButton,
   ManageIconButton,
@@ -34,7 +35,13 @@ export function ManageBillsPanel() {
   const [addOpen, setAddOpen] = useState(false)
 
   const billsQuery = useBillSeriesQuery(workspaceId, tab, queriesEnabled)
-  const bills = billsQuery.data ?? []
+  const bills = useMemo(
+    () =>
+      [...(billsQuery.data ?? [])].sort(
+        (a, b) => a.due_date.localeCompare(b.due_date) || a.title.localeCompare(b.title),
+      ),
+    [billsQuery.data],
+  )
   const showLoading = billsQuery.isPending && bills.length === 0
 
   async function refresh() {
@@ -62,7 +69,7 @@ export function ManageBillsPanel() {
         </ManageActions>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
         {showLoading ? (
           <p className="text-sm text-muted-foreground">Loading bills…</p>
         ) : bills.length === 0 ? (
@@ -83,11 +90,16 @@ export function ManageBillsPanel() {
             <ManageTableBody>
               {bills.map((bill) => (
                 <ManageTableRow key={bill.id}>
-                  <ManageTableTd className="max-w-[220px] truncate font-medium">
-                    {bill.title}
-                    {bill.paid_off ? (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">Paid off</span>
-                    ) : null}
+                  <ManageTableTd className="max-w-[220px]">
+                    <EntryTypeTitle
+                      kind="bill"
+                      title={bill.title}
+                      suffix={
+                        bill.paid_off ? (
+                          <span className="text-xs font-normal text-muted-foreground">Paid off</span>
+                        ) : null
+                      }
+                    />
                   </ManageTableTd>
                   <ManageTableTd>{money(bill.amount)}</ManageTableTd>
                   <ManageTableTd className="whitespace-nowrap">{bill.due_date}</ManageTableTd>

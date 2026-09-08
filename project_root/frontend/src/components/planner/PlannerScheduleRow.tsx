@@ -35,7 +35,7 @@ export function PlannerScheduleRow({ item, onEdit, onPay, onPayExpense }: Planne
       <div className="space-y-0.5 py-0.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <EntryTypeIcon kind="event" />
+            <EntryTypeIcon kind="event" variant="badge" />
             <p className="min-w-0 truncate font-medium">{event.title}</p>
             <span className="shrink-0 text-xs text-muted-foreground">
               {new Date(event.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -57,7 +57,7 @@ export function PlannerScheduleRow({ item, onEdit, onPay, onPayExpense }: Planne
       <div className="py-0.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <EntryTypeIcon kind="income" />
+            <EntryTypeIcon kind="income" variant="badge" />
             <p className="min-w-0 truncate font-medium">{item.title}</p>
             <span className={cn('shrink-0 text-xs', signedMoneyTextClass('income'))}>{signedMoney('income', item.amount)}</span>
           </div>
@@ -77,7 +77,7 @@ export function PlannerScheduleRow({ item, onEdit, onPay, onPayExpense }: Planne
       <div className="py-0.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <EntryTypeIcon kind="bill" />
+            <EntryTypeIcon kind="bill" variant="badge" />
             <p className="min-w-0 truncate font-medium">{item.title}</p>
             <span className={cn('shrink-0 text-xs', signedMoneyTextClass('bill'))}>{signedMoney('bill', item.amount)}</span>
             {pastDue ? <Badge className={`text-xs ${pastDueBadgeClass}`}>Past due</Badge> : null}
@@ -94,7 +94,7 @@ export function PlannerScheduleRow({ item, onEdit, onPay, onPayExpense }: Planne
     <div className="py-0.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          <EntryTypeIcon kind="expense" />
+          <EntryTypeIcon kind="expense" variant="badge" />
           <p className="min-w-0 truncate font-medium">{item.title}</p>
           <span className={cn('shrink-0 text-xs', signedMoneyTextClass('expense'))}>{signedMoney('expense', item.amount)}</span>
           {item.skipped ? <Badge className="bg-secondary text-xs text-secondary-foreground">Skipped</Badge> : null}

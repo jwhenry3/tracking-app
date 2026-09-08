@@ -95,6 +95,19 @@ export type PlannerEvent = {
   created_by: number
 }
 
+export type IncomeSeries = {
+  id: number
+  workspace_id: number
+  title: string
+  amount: number
+  entry_date: string
+  recurrence: string
+  is_recurring: boolean
+  series_anchor_date?: string
+  notes: string
+  created_by: number
+}
+
 export type IncomeEntry = {
   series_id: number
   occurrence_id: string

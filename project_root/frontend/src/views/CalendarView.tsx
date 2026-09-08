@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Plus } from 'lucide-react'
-import { useParams } from 'react-router-dom'
+import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Plus, X } from 'lucide-react'
+import { useLocation, useParams } from 'react-router-dom'
 
+import { CalendarMonthCard } from '@/components/calendar/CalendarMonthCard'
 import { AddDayEntryForm, type AddDayEntryTab } from '@/components/planner/AddDayEntryForm'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
 import { EntryActionButtons } from '@/components/ops/EntryActionButtons'
@@ -16,10 +17,19 @@ import { OperationDialog } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderDivider, PageHeaderIconButton, PageHeaderTextButton } from '@/components/layout/PageHeader'
 import { PlannerDayPanel } from '@/components/planner/PlannerDayPanel'
 import type { PlannerScheduleItem } from '@/components/planner/PlannerScheduleRow'
-import { ScheduleChip } from '@/components/planner/ScheduleChip'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { dueSoonBadgeClass, formatDayLabel, isDueSoon, isPastDue, normalizeFinanceDate, paidBadgeClass, pastDueBadgeClass, skippedBadgeClass, typeBadgeClass } from '@/lib/financeUtils'
+import {
+  dueSoonBadgeClass,
+  formatDayLabel,
+  isDueSoon,
+  isPastDue,
+  normalizeFinanceDate,
+  paidBadgeClass,
+  pastDueBadgeClass,
+  skippedBadgeClass,
+  typeBadgeClass,
+} from '@/lib/financeUtils'
 import { invalidatePlannerDay } from '@/lib/queries/invalidate'
 import {
   useBillsQuery,
@@ -35,190 +45,53 @@ import {
   toggleCheckListDay,
   type PlannerCheckListPrefs,
 } from '@/lib/plannerCheckListPrefs'
-import { passWheelToScrollParent } from '@/lib/nestedScroll'
+import {
+  defaultCalendarFocusFilter,
+  loadCalendarFocusFilter,
+  saveCalendarFocusFilter,
+  toggleCalendarFocusFilter,
+  type CalendarFocusFilter,
+} from '@/lib/calendarFocusFilter'
+import type {
+  CalendarBillItem,
+  CalendarEventItem,
+  CalendarExpenseItem,
+  CalendarIncomeItem,
+  CalendarItem,
+} from '@/lib/calendarTypes'
+import {
+  buildMonthDays,
+  calendarItemKey,
+  endOfMonth,
+  formatDayToggleLabel,
+  isInRange,
+  matchesCalendarItem,
+  matchesScheduleItem,
+  startOfMonth,
+  toIsoDate,
+} from '@/lib/calendarUtils'
 import { describeRecurrence } from '@/lib/recurrence'
-import { calendarLegendColors } from '@/lib/scheduleChipStyles'
-import type { Bill, Expense, IncomeEntry, PlannerEvent } from '@/lib/types'
+import type { Bill, Expense } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { workspaceHasFocus } from '@/lib/workspaceFocus'
 import { ManageActions, useWorkspacePermissions } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
-function endOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59)
-}
-
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
 
 function money(value: number) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
 }
 
-type CalendarIncomeItem = IncomeEntry & { kind: 'income'; date: string }
-type CalendarBillItem = Bill & { kind: 'bill'; date: string }
-type CalendarExpenseItem = Expense & { kind: 'expense'; date: string }
-type CalendarEventItem = PlannerEvent & { kind: 'event'; date: string }
-
-type CalendarItem = CalendarEventItem | CalendarIncomeItem | CalendarBillItem | CalendarExpenseItem
-
-function isInRange(iso: string, start: string, end: string) {
-  const day = iso.slice(0, 10)
-  return day >= start.slice(0, 10) && day <= end.slice(0, 10)
-}
-
-function calendarItemKey(item: CalendarItem) {
-  if (item.kind === 'expense') return `expense-${item.id}`
-  return `${item.kind}-${item.occurrence_id}`
-}
-
-function formatDayToggleLabel(day: string) {
-  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
-const VISIBLE_CHIP_COUNT = 5
-const CHIP_VIEWPORT_HEIGHT = `calc(${VISIBLE_CHIP_COUNT} * 1.375rem + ${VISIBLE_CHIP_COUNT - 1} * 0.25rem)`
-
-function CalendarLegend() {
-  return (
-    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.event} /> Events</span>
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.income} /> Income</span>
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.billDue} /> Bills due</span>
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.billPaid} /> Bills paid</span>
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.billSkipped} /> Bills skipped</span>
-      <span className="inline-flex items-center gap-1.5"><LegendSwatch color={calendarLegendColors.expense} /> Expenses</span>
-    </div>
-  )
-}
-
-function CalendarMonthGrid({
-  days,
-  selectedDay,
-  todayIso,
-  itemsForDay,
-  onSelectDay,
-}: {
-  days: Array<{ date: Date | null; key: string }>
-  selectedDay: string | null
-  todayIso: string
-  itemsForDay: (day: Date) => CalendarItem[]
-  onSelectDay: (dayIso: string) => void
-}) {
-  return (
-    <>
-      <div className="sticky top-0 z-10 mb-2 grid grid-cols-7 bg-card text-center text-xs font-medium text-muted-foreground">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
-          <div key={label} className="py-2">{label}</div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-2 items-stretch">
-        {days.map(({ date: day, key }) => {
-          const dayIso = day ? toIsoDate(day) : null
-          const isSelected = dayIso !== null && dayIso === selectedDay
-          const isToday = dayIso === todayIso
-
-          if (!day) {
-            return <div key={key} className="min-h-0" aria-hidden="true" />
-          }
-
-          const dayItems = itemsForDay(day)
-          const chipListScrollable = dayItems.length > VISIBLE_CHIP_COUNT
-
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onSelectDay(dayIso!)}
-              className={cn(
-                'flex h-full min-h-0 flex-col items-stretch justify-start rounded-lg border p-2 text-left transition-colors',
-                'hover:bg-muted/40',
-                isToday && 'border-primary bg-primary/5',
-                isSelected && 'ring-2 ring-primary bg-primary/10',
-              )}
-            >
-              <div className="mb-2 shrink-0 text-sm font-medium leading-none">{day.getDate()}</div>
-              <div
-                className={cn(
-                  'w-full shrink-0 space-y-1',
-                  chipListScrollable && 'overflow-y-auto [scrollbar-gutter:stable]',
-                )}
-                style={{ height: CHIP_VIEWPORT_HEIGHT }}
-                onWheel={chipListScrollable ? passWheelToScrollParent : undefined}
-              >
-                {dayItems.map((item) => (
-                  <ScheduleChip key={calendarItemKey(item)} item={item} />
-                ))}
-              </div>
-            </button>
-          )
-        })}
-      </div>
-    </>
-  )
-}
-
-function CalendarMonthCard({
-  days,
-  selectedDay,
-  todayIso,
-  itemsForDay,
-  onSelectDay,
-  scrollContent = false,
-}: {
-  days: Array<{ date: Date | null; key: string }>
-  selectedDay: string | null
-  todayIso: string
-  itemsForDay: (day: Date) => CalendarItem[]
-  onSelectDay: (dayIso: string) => void
-  scrollContent?: boolean
-}) {
-  return (
-    <Card className={cn(scrollContent && 'flex min-h-0 flex-1 flex-col overflow-hidden')}>
-      <CardHeader className={cn('pb-3', scrollContent && 'shrink-0')}>
-        <CalendarLegend />
-      </CardHeader>
-      <CardContent
-        className={cn(
-          scrollContent && 'min-h-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]',
-        )}
-      >
-        <CalendarMonthGrid
-          days={days}
-          selectedDay={selectedDay}
-          todayIso={todayIso}
-          itemsForDay={itemsForDay}
-          onSelectDay={onSelectDay}
-        />
-      </CardContent>
-    </Card>
-  )
-}
-
-function LegendSwatch({ color }: { color: string }) {
-  return (
-    <span
-      className="schedule-chip-swatch"
-      style={{ '--schedule-chip-color': color } as React.CSSProperties}
-    />
-  )
-}
-
 export function CalendarView() {
   const { workspaceId } = useParams()
+  const location = useLocation()
   const token = useAuthStore((s) => s.token)
-  const { canAddEntry } = useWorkspacePermissions()
+  const { canAddEntry, workspace } = useWorkspacePermissions()
   const queryClient = useQueryClient()
   const workspaceNumericId = workspaceId ? Number(workspaceId) : null
   const queriesEnabled = Boolean(token && workspaceNumericId)
+
+  const showEventsFilter = workspaceHasFocus(workspace, 'planning')
+  const showFinancesFilter = workspaceHasFocus(workspace, 'finances')
 
   const [cursor, setCursor] = useState(() => new Date())
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null)
@@ -227,9 +100,13 @@ export function CalendarView() {
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [payExpense, setPayExpense] = useState<Expense | null>(null)
   const [payExpenseDialogOpen, setPayExpenseDialogOpen] = useState(false)
-  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [selectedDay, setSelectedDay] = useState<string | null>(() => {
+    const state = location.state as { selectedDay?: string } | null
+    return state?.selectedDay ?? null
+  })
   const [addDate, setAddDate] = useState(() => toIsoDate(new Date()))
   const [addTab, setAddTab] = useState<AddDayEntryTab>('event')
+  const [focusFilter, setFocusFilter] = useState<CalendarFocusFilter>(defaultCalendarFocusFilter)
   const [checkListPrefs, setCheckListPrefs] = useState<PlannerCheckListPrefs>({
     showAll: true,
     hiddenDays: [],
@@ -263,24 +140,7 @@ export function CalendarView() {
     void invalidatePlannerDay(queryClient, workspaceNumericId, day ?? selectedDay ?? addDate)
   }
 
-  const days = useMemo(() => {
-    const first = startOfMonth(cursor)
-    const last = endOfMonth(cursor)
-    const startPad = first.getDay()
-    const totalDays = last.getDate()
-    const cells: Array<{ date: Date | null; key: string }> = []
-
-    for (let i = 0; i < startPad; i += 1) {
-      cells.push({ date: null, key: `pad-${i}` })
-    }
-    for (let day = 1; day <= totalDays; day += 1) {
-      cells.push({
-        date: new Date(cursor.getFullYear(), cursor.getMonth(), day),
-        key: `day-${day}`,
-      })
-    }
-    return cells
-  }, [cursor])
+  const days = useMemo(() => buildMonthDays(cursor), [cursor])
 
   const calendarItems = useMemo<CalendarItem[]>(() => {
     const eventItems: CalendarEventItem[] = events.map((event) => ({
@@ -303,13 +163,16 @@ export function CalendarView() {
       kind: 'expense',
       date: normalizeFinanceDate(item.expense_date),
     }))
-    return [...eventItems, ...incomeItems, ...billItems, ...expenseItems]
-  }, [events, income, bills, expenses])
+    return [...eventItems, ...incomeItems, ...billItems, ...expenseItems].filter((item) =>
+      matchesCalendarItem(item, focusFilter),
+    )
+  }, [events, income, bills, expenses, focusFilter])
 
   const scheduleByDay = useMemo(() => {
     const map = new Map<string, PlannerScheduleItem[]>()
 
     const push = (day: string, item: PlannerScheduleItem) => {
+      if (!matchesScheduleItem(item, focusFilter)) return
       map.set(day, [...(map.get(day) ?? []), item])
     }
 
@@ -327,7 +190,7 @@ export function CalendarView() {
     }
 
     return map
-  }, [events, income, bills, expenses])
+  }, [events, income, bills, expenses, focusFilter])
 
   const monthDayIsos = useMemo(
     () => days.filter((cell) => cell.date).map((cell) => toIsoDate(cell.date!)),
@@ -337,7 +200,30 @@ export function CalendarView() {
   useEffect(() => {
     if (!workspaceId) return
     setCheckListPrefs(loadPlannerCheckListPrefs(Number(workspaceId), 'calendar'))
-  }, [workspaceId])
+    const saved = loadCalendarFocusFilter(Number(workspaceId))
+    setFocusFilter({
+      events: showEventsFilter ? saved.events : false,
+      finances: showFinancesFilter ? saved.finances : false,
+    })
+  }, [workspaceId, showEventsFilter, showFinancesFilter])
+
+  useEffect(() => {
+    const state = location.state as { selectedDay?: string } | null
+    if (state?.selectedDay) {
+      setSelectedDay(state.selectedDay)
+      setCursor(new Date(`${state.selectedDay}T12:00:00`))
+    }
+  }, [location.state])
+
+  function persistFocusFilter(next: CalendarFocusFilter) {
+    if (!workspaceId) return
+    setFocusFilter(next)
+    saveCalendarFocusFilter(Number(workspaceId), next)
+  }
+
+  function toggleFocusFilter(area: keyof CalendarFocusFilter) {
+    persistFocusFilter(toggleCalendarFocusFilter(focusFilter, area))
+  }
 
   useEffect(() => {
     setSelectedDay((current) => {
@@ -403,6 +289,14 @@ export function CalendarView() {
     setPayExpenseDialogOpen(true)
   }
 
+  function handleSelectDay(dayIso: string) {
+    setSelectedDay((current) => (current === dayIso ? null : dayIso))
+  }
+
+  function closeSelectedDay() {
+    setSelectedDay(null)
+  }
+
   if (!token || !workspaceId || !workspaceNumericId) {
     return null
   }
@@ -422,6 +316,7 @@ export function CalendarView() {
         sectionLayout={splitView ? 'tabs' : 'stacked'}
         onToggleCheckLists={() => toggleDayCheckLists(day)}
         onAdd={() => startAdd(day)}
+        onClose={closeSelectedDay}
         onEdit={startEdit}
         onPay={startPay}
         onPayExpense={startPayExpense}
@@ -456,11 +351,19 @@ export function CalendarView() {
         />
         <PageHeaderDivider />
         {splitView ? (
-          <PageHeaderIconButton
-            icon={ListChecks}
-            label={checkListPrefs.showAll ? 'Hide all check lists' : 'Show all check lists'}
-            onClick={() => persistCheckListPrefs(toggleAllCheckLists(checkListPrefs))}
-          />
+          <>
+            <PageHeaderIconButton
+              icon={X}
+              label="Close day"
+              onClick={closeSelectedDay}
+            />
+            <PageHeaderDivider />
+            <PageHeaderIconButton
+              icon={ListChecks}
+              label={checkListPrefs.showAll ? 'Hide all check lists' : 'Show all check lists'}
+              onClick={() => persistCheckListPrefs(toggleAllCheckLists(checkListPrefs))}
+            />
+          </>
         ) : null}
         {canAddEntry ? (
         <PageHeaderIconButton
@@ -474,8 +377,8 @@ export function CalendarView() {
       <div
         className={cn(
           splitView
-            ? 'flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4'
-            : 'min-h-0 flex-1 overflow-y-auto space-y-6 p-4',
+            ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:gap-4 md:p-4'
+            : 'min-h-0 flex-1 overflow-y-auto space-y-4 p-3 md:space-y-6 md:p-4',
         )}
       >
         {splitView ? (
@@ -486,7 +389,11 @@ export function CalendarView() {
               selectedDay={selectedDay}
               todayIso={todayIso}
               itemsForDay={itemsForDay}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleSelectDay}
+              focusFilter={focusFilter}
+              showEventsFilter={showEventsFilter}
+              showFinancesFilter={showFinancesFilter}
+              onToggleFocusFilter={toggleFocusFilter}
             />
 
             {selectedDay ? (
@@ -502,7 +409,11 @@ export function CalendarView() {
               selectedDay={selectedDay}
               todayIso={todayIso}
               itemsForDay={itemsForDay}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleSelectDay}
+              focusFilter={focusFilter}
+              showEventsFilter={showEventsFilter}
+              showFinancesFilter={showFinancesFilter}
+              onToggleFocusFilter={toggleFocusFilter}
             />
 
             <Card>
@@ -609,9 +520,9 @@ function UpcomingRow({
   if (item.kind === 'event') {
     return (
       <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <EntryTypeIcon kind="event" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <EntryTypeIcon kind="event" variant="badge" />
             <p className="font-medium">{item.title}</p>
             {item.is_recurring ? <Badge className="bg-secondary text-secondary-foreground">Recurring</Badge> : null}
           </div>
@@ -633,9 +544,9 @@ function UpcomingRow({
   if (item.kind === 'income') {
     return (
       <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <EntryTypeIcon kind="income" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <EntryTypeIcon kind="income" variant="badge" />
             <p className="font-medium">{item.title}</p>
             {item.is_recurring ? <Badge className="bg-secondary text-secondary-foreground">Recurring</Badge> : null}
           </div>
@@ -659,9 +570,9 @@ function UpcomingRow({
 
     return (
       <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <EntryTypeIcon kind="expense" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <EntryTypeIcon kind="expense" variant="badge" />
             <p className="font-medium">{item.title}</p>
             {pastDue ? <Badge className={pastDueBadgeClass}>Past due</Badge> : null}
             {dueSoon ? <Badge className={dueSoonBadgeClass}>Due soon</Badge> : null}
@@ -689,9 +600,9 @@ function UpcomingRow({
 
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <EntryTypeIcon kind="bill" />
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <EntryTypeIcon kind="bill" variant="badge" />
           <p className="font-medium">{item.title}</p>
           {pastDue ? <Badge className={pastDueBadgeClass}>Past due</Badge> : null}
           {dueSoon ? <Badge className={dueSoonBadgeClass}>Due soon</Badge> : null}

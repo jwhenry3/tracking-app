@@ -1,13 +1,15 @@
 import { FormField } from '@/components/forms/FormField'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import type { RecurrenceConfig, RecurrenceFrequency, RecurrencePreset } from '@/lib/recurrence'
+import type { MonthDay, RecurrenceConfig, RecurrenceFrequency, RecurrencePreset } from '@/lib/recurrence'
 import {
   applyRecurrencePreset,
   buildRecurrenceRule,
   defaultRecurrenceConfig,
+  describeMonthDay,
   describeRecurrence,
   getRecurrencePresetOptions,
+  parseAnchorDate,
   weekdayLabels,
 } from '@/lib/recurrence'
 
@@ -71,7 +73,7 @@ export function RecurrencePicker({ value, anchorDate, onChange, readOnly = false
 
       {value.preset === 'custom' ? (
         <>
-          <div className="grid grid-cols-[72px_1fr_1fr] items-end gap-2">
+          <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[72px_1fr_1fr]">
             <span className="pb-2 text-sm text-muted-foreground">Repeat every</span>
             <FormField
               label=""
@@ -127,26 +129,93 @@ export function RecurrencePicker({ value, anchorDate, onChange, readOnly = false
           ) : null}
 
           {value.frequency === 'monthly' ? (
-            <div className="space-y-2">
-              <Label>Monthly repeat</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={value.monthlyMode}
-                onChange={(event) =>
-                  onChange({
-                    ...value,
-                    monthlyMode: event.target.value as RecurrenceConfig['monthlyMode'],
-                  })
-                }
-              >
-                <option value="day_of_month">On day {new Date(`${anchorDate}T12:00:00`).getDate()}</option>
-                <option value="day_of_week">
-                  On the {describeMonthlyWeekdayOption(anchorDate)}
-                </option>
-              </select>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Monthly repeat</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={value.monthlyMode}
+                  onChange={(event) =>
+                    onChange({
+                      ...value,
+                      preset: 'custom',
+                      monthlyMode: event.target.value as RecurrenceConfig['monthlyMode'],
+                    })
+                  }
+                >
+                  <option value="day_of_month">On specific days of the month</option>
+                  <option value="day_of_week">
+                    On the {describeMonthlyWeekdayOption(anchorDate)}
+                  </option>
+                </select>
+              </div>
+
+              {value.monthlyMode === 'day_of_month' ? (
+                <>
+                  <MonthlyDayPicker
+                    selectedDays={resolveMonthlyDays(value, anchorDate)}
+                    onChange={(monthlyDays) =>
+                      onChange({
+                        ...value,
+                        preset: 'custom',
+                        frequency: 'monthly',
+                        monthlyMode: 'day_of_month',
+                        monthlyDays,
+                      })
+                    }
+                  />
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={value.adjustWeekendPrevious}
+                      onChange={(event) =>
+                        onChange({
+                          ...value,
+                          preset: isMultiDayMonthlyPreset(value.preset) ? 'custom' : value.preset,
+                          adjustWeekendPrevious: event.target.checked,
+                        })
+                      }
+                    />
+                    <span>Move to previous weekday when a date falls on a weekend</span>
+                  </label>
+                </>
+              ) : null}
             </div>
           ) : null}
         </>
+      ) : null}
+
+      {showsMonthlyDayPicker(value) ? (
+        <div className="space-y-3 border-t pt-3">
+          <MonthlyDayPicker
+            selectedDays={resolveMonthlyDays(value, anchorDate)}
+            onChange={(monthlyDays) =>
+              onChange({
+                ...value,
+                preset: 'custom',
+                frequency: 'monthly',
+                monthlyMode: 'day_of_month',
+                monthlyDays,
+              })
+            }
+          />
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={value.adjustWeekendPrevious}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  preset: isMultiDayMonthlyPreset(value.preset) ? 'custom' : value.preset,
+                  adjustWeekendPrevious: event.target.checked,
+                })
+              }
+            />
+            <span>Move to previous weekday when a date falls on a weekend</span>
+          </label>
+        </div>
       ) : null}
 
       {value.preset !== 'none' ? (
@@ -167,7 +236,7 @@ export function RecurrencePicker({ value, anchorDate, onChange, readOnly = false
             <option value="count">After</option>
           </select>
           {value.endType === 'count' ? (
-            <div className="grid grid-cols-[72px_1fr] items-center gap-2">
+            <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[72px_1fr]">
               <span className="text-sm text-muted-foreground">Occurrences</span>
               <FormField
                 label=""
@@ -188,6 +257,74 @@ export function RecurrencePicker({ value, anchorDate, onChange, readOnly = false
             />
           ) : null}
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+function isMultiDayMonthlyPreset(preset: RecurrencePreset) {
+  return preset === 'monthly_1_15' || preset === 'monthly_15_last'
+}
+
+const monthDayOptions: MonthDay[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+  -1,
+]
+
+function showsMonthlyDayPicker(value: RecurrenceConfig) {
+  if (value.preset === 'none' || value.preset === 'custom' || value.preset === 'monthly_weekday') {
+    return false
+  }
+  return value.frequency === 'monthly' && value.monthlyMode === 'day_of_month'
+}
+
+function resolveMonthlyDays(value: RecurrenceConfig, anchorDate: string): MonthDay[] {
+  if (value.monthlyDays.length > 0) {
+    return value.monthlyDays
+  }
+  return [parseAnchorDate(anchorDate).getDate()]
+}
+
+function MonthlyDayPicker({
+  selectedDays,
+  onChange,
+}: {
+  selectedDays: MonthDay[]
+  onChange: (days: MonthDay[]) => void
+}) {
+  function toggleDay(day: MonthDay) {
+    const selected = selectedDays.includes(day)
+    const next = selected ? selectedDays.filter((item) => item !== day) : [...selectedDays, day]
+    onChange(next.length > 0 ? next : [day])
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label>Days of the month</Label>
+      <div className="flex flex-wrap gap-2">
+        {monthDayOptions.map((day) => {
+          const selected = selectedDays.includes(day)
+          const label = day === -1 ? 'Last' : String(day)
+          return (
+            <button
+              key={day}
+              type="button"
+              className={cn(
+                'min-w-9 rounded-md border px-2 py-1.5 text-xs font-medium',
+                selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-background',
+              )}
+              aria-label={day === -1 ? 'Last day of month' : `Day ${day}`}
+              onClick={() => toggleDay(day)}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {selectedDays.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Selected: {selectedDays.map((day) => describeMonthDay(day)).join(', ')}
+        </p>
       ) : null}
     </div>
   )

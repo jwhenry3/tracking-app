@@ -20,6 +20,7 @@ type AuthState = {
   settings: Record<string, unknown>
   workspaces: Workspace[]
   activeWorkspaceId: number | null
+  sessionReady: boolean
   isLoading: boolean
   error: string | null
   login: (username: string, password: string) => Promise<void>
@@ -61,20 +62,22 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       ...emptyAuth,
+      sessionReady: false,
       isLoading: false,
       error: null,
 
       login: async (username, password) => {
-        set({ isLoading: true, error: null })
+        set({ isLoading: true, error: null, sessionReady: false })
         try {
           const data = await loginRequest(username, password)
-          set({ token: data.token, isLoading: false })
           const user = await fetchMe(data.token)
-          set({ ...applyUserToState(user), isLoading: false })
+          set({ token: data.token, ...applyUserToState(user), isLoading: false })
           await get().loadWorkspaces()
+          set({ sessionReady: true })
         } catch (error) {
           set({
             isLoading: false,
+            sessionReady: true,
             error: error instanceof Error ? error.message : 'Login failed',
           })
           throw error
@@ -82,16 +85,17 @@ export const useAuthStore = create<AuthState>()(
       },
 
       register: async (username, password, workspaceName, email) => {
-        set({ isLoading: true, error: null })
+        set({ isLoading: true, error: null, sessionReady: false })
         try {
           const data = await registerRequest(username, password, workspaceName, email)
-          set({ token: data.token, isLoading: false })
           const user = await fetchMe(data.token)
-          set({ ...applyUserToState(user), isLoading: false })
+          set({ token: data.token, ...applyUserToState(user), isLoading: false })
           await get().loadWorkspaces()
+          set({ sessionReady: true })
         } catch (error) {
           set({
             isLoading: false,
+            sessionReady: true,
             error: error instanceof Error ? error.message : 'Registration failed',
           })
           throw error
@@ -100,17 +104,22 @@ export const useAuthStore = create<AuthState>()(
 
       hydrate: async () => {
         const { token } = get()
-        if (!token) return
+        if (!token) {
+          set({ sessionReady: true })
+          return
+        }
 
-        set({ isLoading: true, error: null })
+        set({ isLoading: true, error: null, sessionReady: false })
         try {
           const user = await fetchMe(token)
           set({ ...applyUserToState(user), isLoading: false })
           await get().loadWorkspaces()
+          set({ sessionReady: true })
         } catch {
           set({
             ...emptyAuth,
             isLoading: false,
+            sessionReady: true,
           })
         }
       },
@@ -167,6 +176,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           ...emptyAuth,
           error: null,
+          sessionReady: true,
         })
       },
 

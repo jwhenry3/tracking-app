@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { AddEventForm } from '@/components/ops/AddEventForm'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
+import { EntryTypeTitle } from '@/components/ops/EntryTypeIcon'
 import {
   ManageAddButton,
   ManageIconButton,
@@ -49,7 +50,7 @@ export function ManageEventsPanel() {
         </ManageActions>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
         {showLoading ? (
           <p className="text-sm text-muted-foreground">Loading events…</p>
         ) : events.length === 0 ? (
@@ -65,7 +66,9 @@ export function ManageEventsPanel() {
             <ManageTableBody>
               {events.map((event) => (
                 <ManageTableRow key={event.id}>
-                  <ManageTableTd className="max-w-[260px] truncate font-medium">{event.title}</ManageTableTd>
+                  <ManageTableTd className="max-w-[260px]">
+                    <EntryTypeTitle kind="event" title={event.title} />
+                  </ManageTableTd>
                   <ManageTableTd className="whitespace-nowrap">
                     {event.series_anchor_date ?? event.start_at.slice(0, 10)}
                   </ManageTableTd>

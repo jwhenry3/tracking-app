@@ -36,7 +36,7 @@ export function Dialog({ open, onOpenChange, children, className }: DialogProps)
       ref={ref}
       closedby="none"
       className={cn(
-        'fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-4 open:flex open:items-center open:justify-center backdrop:bg-black/40',
+        'fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 open:flex open:items-stretch open:justify-center sm:p-4 sm:open:items-center backdrop:bg-black/40',
         className,
       )}
       onClose={() => {
@@ -86,7 +86,7 @@ export function DialogContent({ children, className }: DialogContentProps) {
   return (
     <div
       className={cn(
-        'relative flex max-h-[min(90vh,760px)] w-full flex-col overflow-hidden rounded-lg border bg-background shadow-xl',
+        'relative flex h-full max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border-0 bg-background shadow-xl sm:h-auto sm:max-h-[min(90vh,760px)] sm:rounded-lg sm:border',
         className,
       )}
     >
