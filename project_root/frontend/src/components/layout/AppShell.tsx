@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
 import { WorkspaceChecklist } from '@/components/calendar/WorkspaceChecklist'
 import { AddWorkspaceDialog } from '@/components/workspace/AddWorkspaceDialog'
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar'
 import { ProductBrandHeader } from '@/components/layout/ProductBrandHeader'
 import { RealtimeQuerySync } from '@/components/layout/RealtimeQuerySync'
 import { DueDateToastSync, RealtimeToastSync } from '@/components/layout/ToastSync'
@@ -94,14 +95,6 @@ function sectionContainsPath(section: NavSection, pathname: string, workspaceId:
   return section.items.some(
     (item) => pathname === `${basePath}${item.to}` || pathname.startsWith(`${basePath}${item.to}/`),
   )
-}
-
-function workspaceInitials(name: string) {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function workspaceRouteSuffix(pathname: string) {
@@ -411,14 +404,15 @@ export function AppShell() {
             title={Number(workspaceId) === workspace.id ? `${workspace.name} · members & invites` : workspace.name}
             onClick={() => handleWorkspaceClick(workspace)}
             className={cn(
-              'flex shrink-0 items-center justify-center rounded-2xl text-sm font-semibold transition',
+              'flex shrink-0 items-center justify-center rounded-2xl transition',
               compact ? 'h-10 w-10' : 'h-11 w-11',
-              Number(workspaceId) === workspace.id && !isCentralCalendar
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-white/10 hover:bg-white/20',
             )}
           >
-            {workspaceInitials(workspace.name)}
+            <WorkspaceAvatar
+              workspace={workspace}
+              active={Number(workspaceId) === workspace.id && !isCentralCalendar}
+              compact={compact}
+            />
           </button>
         ))}
         <button
@@ -480,14 +474,12 @@ export function AppShell() {
                   type="button"
                   title={Number(workspaceId) === workspace.id ? `${workspace.name} · members & invites` : workspace.name}
                   onClick={() => handleWorkspaceClick(workspace)}
-                  className={cn(
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold transition',
-                    Number(workspaceId) === workspace.id && !isCentralCalendar
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-white/10 hover:bg-white/20',
-                  )}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition"
                 >
-                  {workspaceInitials(workspace.name)}
+                  <WorkspaceAvatar
+                    workspace={workspace}
+                    active={Number(workspaceId) === workspace.id && !isCentralCalendar}
+                  />
                 </button>
               ))}
               <button

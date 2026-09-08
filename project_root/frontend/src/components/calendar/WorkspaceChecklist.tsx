@@ -1,5 +1,6 @@
 import type { Workspace } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { WorkspaceColorBadge } from '@/components/workspace/WorkspaceColorBadge'
 
 type WorkspaceChecklistProps = {
   workspaces: Workspace[]
@@ -50,6 +51,7 @@ export function WorkspaceChecklist({
                 onChange={() => onToggle(workspace.id)}
                 className="h-4 w-4 rounded border-input"
               />
+              <WorkspaceColorBadge workspace={workspace} />
               <span className="truncate">{workspace.name}</span>
             </label>
           )

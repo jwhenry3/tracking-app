@@ -27,6 +27,7 @@ type workspaceResponse struct {
 	Role        string   `json:"role"`
 	FocusAreas  []string `json:"focus_areas"`
 	ManageAreas []string `json:"manage_areas"`
+	Color       *string  `json:"color,omitempty"`
 }
 
 type createWorkspaceRequest struct {
@@ -38,7 +39,10 @@ type createWorkspaceRequest struct {
 type updateWorkspaceSettingsRequest struct {
 	Name       string   `json:"name" binding:"required,min=2,max=100"`
 	FocusAreas []string `json:"focus_areas"`
+	Color      *string  `json:"color"`
 }
+
+var workspaceColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 var defaultFocusAreas = []string{"planning", "finances"}
 
@@ -93,6 +97,35 @@ func focusAreasJSON(areas []string) (string, error) {
 	return string(raw), nil
 }
 
+func parseWorkspaceColor(raw sql.NullString) *string {
+	if !raw.Valid {
+		return nil
+	}
+	color := strings.TrimSpace(raw.String)
+	if !workspaceColorPattern.MatchString(color) {
+		return nil
+	}
+	normalized := strings.ToLower(color)
+	return &normalized
+}
+
+func normalizeWorkspaceColorInput(value *string) (sql.NullString, error) {
+	if value == nil {
+		return sql.NullString{}, nil
+	}
+
+	color := strings.TrimSpace(*value)
+	if color == "" {
+		return sql.NullString{}, nil
+	}
+	if !workspaceColorPattern.MatchString(color) {
+		return sql.NullString{}, fmt.Errorf("invalid color")
+	}
+
+	normalized := strings.ToLower(color)
+	return sql.NullString{String: normalized, Valid: true}, nil
+}
+
 type updateMemberRequest struct {
 	ManageAreas []string `json:"manage_areas"`
 }
@@ -128,16 +161,18 @@ func effectiveManageAreas(role string, stored, focus []string) []string {
 func (h *WorkspaceHandler) loadWorkspaceResponse(workspaceID int, role string, storedManage []string) (workspaceResponse, error) {
 	var ws workspaceResponse
 	var focusRaw sql.NullString
+	var colorRaw sql.NullString
 	err := h.DB.QueryRow(
-		`SELECT id, name, slug, focus_areas FROM workspaces WHERE id = ?`,
+		`SELECT id, name, slug, focus_areas, color FROM workspaces WHERE id = ?`,
 		workspaceID,
-	).Scan(&ws.ID, &ws.Name, &ws.Slug, &focusRaw)
+	).Scan(&ws.ID, &ws.Name, &ws.Slug, &focusRaw, &colorRaw)
 	if err != nil {
 		return workspaceResponse{}, err
 	}
 	ws.Role = role
 	ws.FocusAreas = parseFocusAreas(focusRaw)
 	ws.ManageAreas = effectiveManageAreas(role, storedManage, ws.FocusAreas)
+	ws.Color = parseWorkspaceColor(colorRaw)
 	return ws, nil
 }
 
@@ -220,7 +255,7 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
 
 	rows, err := h.DB.Query(`
-		SELECT w.id, w.name, w.slug, wm.role, w.focus_areas, wm.manage_areas
+		SELECT w.id, w.name, w.slug, wm.role, w.focus_areas, wm.manage_areas, w.color
 		FROM workspaces w
 		INNER JOIN workspace_members wm ON wm.workspace_id = w.id
 		WHERE wm.user_id = ? AND w.archived_at IS NULL
@@ -236,12 +271,14 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 		var ws workspaceResponse
 		var focusRaw sql.NullString
 		var manageRaw sql.NullString
-		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role, &focusRaw, &manageRaw); err != nil {
+		var colorRaw sql.NullString
+		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role, &focusRaw, &manageRaw, &colorRaw); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read workspace"})
 			return
 		}
 		ws.FocusAreas = parseFocusAreas(focusRaw)
 		ws.ManageAreas = effectiveManageAreas(ws.Role, parseManageAreas(manageRaw), ws.FocusAreas)
+		ws.Color = parseWorkspaceColor(colorRaw)
 		workspaces = append(workspaces, ws)
 	}
 
@@ -403,6 +440,12 @@ func (h *WorkspaceHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	colorValue, err := normalizeWorkspaceColorInput(req.Color)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspace color"})
+		return
+	}
+
 	trimmedName := strings.TrimSpace(req.Name)
 	slug, err := uniqueWorkspaceSlug(h.DB, trimmedName, workspaceID.(int))
 	if err != nil {
@@ -411,8 +454,8 @@ func (h *WorkspaceHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	_, err = h.DB.Exec(
-		`UPDATE workspaces SET name = ?, slug = ?, focus_areas = ? WHERE id = ?`,
-		trimmedName, slug, focusAreasValue, workspaceID,
+		`UPDATE workspaces SET name = ?, slug = ?, focus_areas = ?, color = ? WHERE id = ?`,
+		trimmedName, slug, focusAreasValue, colorValue, workspaceID,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update workspace settings"})

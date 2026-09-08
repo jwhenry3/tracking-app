@@ -29,7 +29,7 @@ import { queryKeys } from '@/lib/queries/keys'
 import type { CalendarFocusFilter } from '@/lib/calendarFocusFilter'
 import type { CentralCalendarItem } from '@/lib/calendarTypes'
 import type { Todo, TodoList } from '@/lib/types'
-import { isInRange, matchesCalendarItem, workspaceInitials } from '@/lib/calendarUtils'
+import { isInRange, matchesCalendarItem } from '@/lib/calendarUtils'
 import type { Workspace } from '@/lib/types'
 import { workspaceHasFocus } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
@@ -572,8 +572,5 @@ export function useCentralCalendarData(
   return {
     calendarItems,
     isLoading,
-    workspaceLabels: Object.fromEntries(
-      visibleWorkspaces.map((workspace) => [workspace.id, workspaceInitials(workspace.name)]),
-    ),
   }
 }

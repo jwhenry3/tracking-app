@@ -17,6 +17,7 @@ export type Workspace = {
   role: string
   focus_areas: WorkspaceFocusArea[]
   manage_areas: WorkspaceFocusArea[]
+  color?: string | null
 }
 
 export type CreateWorkspaceResult = {

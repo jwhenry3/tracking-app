@@ -137,10 +137,4 @@ export function buildMonthDays(cursor: Date) {
   return cells
 }
 
-export function workspaceInitials(name: string) {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
-}
+export { workspaceInitials } from '@/lib/workspaceColors'

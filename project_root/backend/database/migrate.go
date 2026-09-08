@@ -244,6 +244,7 @@ var alterStatements = []string{
 	`ALTER TABLE workspaces ADD COLUMN focus_areas JSON NULL`,
 	`ALTER TABLE workspaces ADD COLUMN archived_at TIMESTAMP NULL`,
 	`UPDATE workspaces SET focus_areas = '["planning","finances"]' WHERE focus_areas IS NULL`,
+	`ALTER TABLE workspaces ADD COLUMN color VARCHAR(7) NULL`,
 	`ALTER TABLE users ADD COLUMN display_name VARCHAR(255) NULL`,
 	`ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512) NULL`,
 	`ALTER TABLE users ADD COLUMN settings JSON NULL`,

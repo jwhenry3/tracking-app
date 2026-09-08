@@ -14,6 +14,7 @@ import { Dialog, DialogBody, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { archiveWorkspace, updateWorkspaceSettings } from '@/lib/api'
 import type { Workspace, WorkspaceFocusArea } from '@/lib/types'
+import { generatedWorkspaceColor, resolveWorkspaceColor } from '@/lib/workspaceColors'
 import { WORKSPACE_FOCUS_OPTIONS } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -28,6 +29,7 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
   const updateWorkspace = useAuthStore((s) => s.updateWorkspace)
   const [name, setName] = useState(workspace.name)
   const [focusAreas, setFocusAreas] = useState<WorkspaceFocusArea[]>(workspace.focus_areas ?? [])
+  const [color, setColor] = useState(workspace.color ?? '')
   const [feedback, setFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
@@ -39,7 +41,8 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
   useEffect(() => {
     setName(workspace.name)
     setFocusAreas(workspace.focus_areas ?? [])
-  }, [workspace.id, workspace.name, workspace.focus_areas])
+    setColor(workspace.color ?? '')
+  }, [workspace.id, workspace.name, workspace.focus_areas, workspace.color])
 
   function resetArchiveDialog() {
     setArchiveStep(1)
@@ -65,9 +68,10 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
     setLoading(true)
     setFeedback(null)
     try {
-      const updated = await updateWorkspaceSettings(token, workspace.id, trimmedName, focusAreas)
+      const updated = await updateWorkspaceSettings(token, workspace.id, trimmedName, focusAreas, color || null)
       updateWorkspace(updated)
       setName(updated.name)
+      setColor(updated.color ?? '')
       setFeedback('Workspace settings saved.')
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Could not save settings')
@@ -98,6 +102,11 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
     }
   }
 
+  const previewWorkspace = { id: workspace.id, color: color || null }
+  const previewColor = resolveWorkspaceColor(previewWorkspace)
+  const defaultColor = generatedWorkspaceColor(workspace.id)
+  const usesDefaultColor = !color
+
   return (
     <>
       <div className="space-y-6">
@@ -108,6 +117,37 @@ export function WorkspaceSettings({ workspace, onWorkspaceRemoved }: WorkspaceSe
           onChange={setName}
           placeholder="Demo Family"
         />
+
+        <div>
+          <h3 className="text-sm font-semibold">Workspace color</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Used for avatars, calendar filters, and grouped day chips across all calendars.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="color"
+                value={previewColor}
+                onChange={(event) => setColor(event.target.value)}
+                className="h-10 w-14 cursor-pointer rounded-md border border-input bg-background p-1"
+                aria-label="Workspace color"
+              />
+              <span className="font-mono text-xs text-muted-foreground">{previewColor}</span>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={usesDefaultColor}
+              onClick={() => setColor('')}
+            >
+              Use default
+            </Button>
+            {usesDefaultColor ? (
+              <span className="text-xs text-muted-foreground">Default: {defaultColor}</span>
+            ) : null}
+          </div>
+        </div>
 
         <div>
           <h3 className="text-sm font-semibold">Areas of focus</h3>

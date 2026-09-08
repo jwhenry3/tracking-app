@@ -25,13 +25,11 @@ function ScheduleChipShell({
   chipColor,
   kind,
   title,
-  workspaceLabel,
   children,
 }: {
   chipColor: string
   kind: 'event' | 'income' | 'bill' | 'expense'
   title?: string
-  workspaceLabel?: string
   children: ReactNode
 }) {
   return (
@@ -41,30 +39,18 @@ function ScheduleChipShell({
       title={title}
     >
       <EntryTypeIcon kind={kind} className="h-3 w-3" />
-      {workspaceLabel ? (
-        <span className="shrink-0 rounded bg-black/10 px-1 text-[10px] font-semibold leading-none">
-          {workspaceLabel}
-        </span>
-      ) : null}
       <span className="truncate">{children}</span>
     </div>
   )
 }
 
-export function ScheduleChip({
-  item,
-  workspaceLabel,
-}: {
-  item: ScheduleChipItem
-  workspaceLabel?: string
-}) {
+export function ScheduleChip({ item }: { item: ScheduleChipItem }) {
   if (!('kind' in item) || item.kind === 'event') {
     const event = item
     return (
       <ScheduleChipShell
         chipColor={event.color || scheduleChipColors.event}
         kind="event"
-        workspaceLabel={workspaceLabel}
         title={event.is_recurring ? describeRecurrence(event.recurrence, event.start_at.slice(0, 10)) : event.title}
       >
         {event.title}
@@ -78,7 +64,6 @@ export function ScheduleChip({
       <ScheduleChipShell
         chipColor={scheduleChipColors.income}
         kind="income"
-        workspaceLabel={workspaceLabel}
         title={item.is_recurring ? describeRecurrence(item.recurrence, itemDate(item)) : item.title}
       >
         +{chipMoney(item.amount)} {item.title}
@@ -92,10 +77,9 @@ export function ScheduleChip({
       <ScheduleChipShell
         chipColor={billChipColorValue(item)}
         kind="bill"
-        workspaceLabel={workspaceLabel}
         title={item.is_recurring ? describeRecurrence(item.recurrence, itemDate(item)) : item.title}
       >
-        {item.paid ? '✓' : item.skipped ? '–' : '!'}{chipMoney(item.amount)} {item.title}
+        {item.paid ? '✓' : item.skipped ? '–' : ''}{chipMoney(item.amount)} {item.title}
         {item.is_recurring ? ' ↻' : ''}
       </ScheduleChipShell>
     )
@@ -105,10 +89,9 @@ export function ScheduleChip({
     <ScheduleChipShell
       chipColor={scheduleChipColors.expense}
       kind="expense"
-      workspaceLabel={workspaceLabel}
       title={item.title}
     >
-      {item.paid ? '✓' : item.skipped ? '–' : '!'}-{chipMoney(item.amount)} {item.title}
+      {item.paid ? '✓' : item.skipped ? '–' : ''}-{chipMoney(item.amount)} {item.title}
     </ScheduleChipShell>
   )
 }

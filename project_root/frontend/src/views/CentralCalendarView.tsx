@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { CalendarMonthCard } from '@/components/calendar/CalendarMonthCard'
 import { EntryTypeIcon } from '@/components/ops/EntryTypeIcon'
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar'
 import { OccurrenceMeta } from '@/components/forms/OccurrenceScopePicker'
 import { PageHeader, PageHeaderDivider, PageHeaderIconButton, PageHeaderTextButton } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +27,7 @@ import {
   toIsoDate,
   workspaceInitials,
 } from '@/lib/calendarUtils'
+import { resolveWorkspaceColor } from '@/lib/workspaceColors'
 import {
   dueSoonBadgeClass,
   formatDayLabel,
@@ -53,6 +55,14 @@ export function CentralCalendarView() {
   const setActiveWorkspace = useAuthStore((state) => state.setActiveWorkspace)
   const selectedWorkspaceIds = useCentralCalendarFilterStore((state) => state.selectedWorkspaceIds)
 
+  const resolveWorkspaceColorById = useCallback(
+    (workspaceId: number) => {
+      const workspace = workspaces.find((entry) => entry.id === workspaceId)
+      return resolveWorkspaceColor(workspace ?? { id: workspaceId })
+    },
+    [workspaces],
+  )
+
   const showEventsFilter = workspaces.some((workspace) => workspaceHasFocus(workspace, 'planning'))
   const showFinancesFilter = workspaces.some((workspace) => workspaceHasFocus(workspace, 'finances'))
 
@@ -71,7 +81,7 @@ export function CentralCalendarView() {
     [cursor],
   )
 
-  const { calendarItems, isLoading, workspaceLabels } = useCentralCalendarData(
+  const { calendarItems, isLoading } = useCentralCalendarData(
     workspaces,
     range,
     focusFilter,
@@ -118,12 +128,7 @@ export function CentralCalendarView() {
 
   function itemsForDay(day: Date) {
     const iso = toIsoDate(day)
-    return calendarItems
-      .filter((item) => item.date === iso)
-      .map((item) => ({
-        ...item,
-        workspaceLabel: workspaceLabels[item.workspaceId],
-      }))
+    return calendarItems.filter((item) => item.date === iso)
   }
 
   const upcomingItems = useMemo(
@@ -216,6 +221,8 @@ export function CentralCalendarView() {
               showEventsFilter={showEventsFilter}
               showFinancesFilter={showFinancesFilter}
               onToggleFocusFilter={toggleFocusFilter}
+              groupChipsByWorkspace
+              resolveWorkspaceColor={resolveWorkspaceColorById}
             />
 
             {selectedDay ? (
@@ -246,9 +253,11 @@ export function CentralCalendarView() {
                         <div key={workspaceId} className="space-y-2">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-xs font-semibold">
-                                {workspaceInitials(workspaceName)}
-                              </span>
+                              <WorkspaceAvatar
+                                workspace={{ id: workspaceId, name: workspaceName, color: workspaces.find((entry) => entry.id === workspaceId)?.color }}
+                                compact
+                                className="h-7 w-7 text-xs"
+                              />
                               <p className="font-medium">{workspaceName}</p>
                             </div>
                             <Button
@@ -263,7 +272,11 @@ export function CentralCalendarView() {
                           </div>
                           <div className="space-y-2">
                             {items.map((item) => (
-                              <CentralUpcomingRow key={calendarItemKey(item, item.workspaceId)} item={item} />
+                              <CentralUpcomingRow
+                                key={calendarItemKey(item, item.workspaceId)}
+                                item={item}
+                                workspaces={workspaces}
+                              />
                             ))}
                           </div>
                         </div>
@@ -286,6 +299,8 @@ export function CentralCalendarView() {
               showEventsFilter={showEventsFilter}
               showFinancesFilter={showFinancesFilter}
               onToggleFocusFilter={toggleFocusFilter}
+              groupChipsByWorkspace
+              resolveWorkspaceColor={resolveWorkspaceColorById}
             />
 
             <Card>
@@ -300,6 +315,7 @@ export function CentralCalendarView() {
                     <CentralUpcomingRow
                       key={calendarItemKey(item, item.workspaceId)}
                       item={item}
+                      workspaces={workspaces}
                       onOpen={() => openWorkspaceDay(item.workspaceId, item.date)}
                     />
                   ))
@@ -316,12 +332,18 @@ export function CentralCalendarView() {
 function CentralUpcomingRow({
   item,
   onOpen,
+  workspaces,
 }: {
   item: CentralCalendarItem
   onOpen?: () => void
+  workspaces: Array<{ id: number; color?: string | null }>
 }) {
+  const workspace = workspaces.find((entry) => entry.id === item.workspaceId)
   const workspaceBadge = (
-    <Badge className="shrink-0 bg-secondary text-secondary-foreground">
+    <Badge
+      className="shrink-0 border-0 text-white"
+      style={{ backgroundColor: resolveWorkspaceColor(workspace ?? { id: item.workspaceId, color: null }) }}
+    >
       {workspaceInitials(item.workspaceName)}
     </Badge>
   )

@@ -12,6 +12,7 @@ import {
   VISIBLE_CHIP_COUNT,
   WEEKDAY_LABELS,
 } from '@/lib/calendarUtils'
+import { groupItemsByWorkspace } from '@/lib/workspaceColors'
 import { passWheelToScrollParent } from '@/lib/nestedScroll'
 import { calendarLegendColors } from '@/lib/scheduleChipStyles'
 import { cn } from '@/lib/utils'
@@ -111,7 +112,47 @@ export function CalendarFocusFilters({
   )
 }
 
-type CalendarChipItem = CalendarItem & { workspaceLabel?: string; workspaceId?: number }
+type CalendarChipItem = CalendarItem & { workspaceId?: number }
+
+function DayChipList({
+  dayItems,
+  groupChipsByWorkspace,
+  resolveWorkspaceColor,
+}: {
+  dayItems: CalendarChipItem[]
+  groupChipsByWorkspace: boolean
+  resolveWorkspaceColor?: (workspaceId: number) => string
+}) {
+  if (!groupChipsByWorkspace || !resolveWorkspaceColor) {
+    return (
+      <>
+        {dayItems.map((item) => (
+          <ScheduleChip key={calendarItemKey(item, item.workspaceId)} item={item} />
+        ))}
+      </>
+    )
+  }
+
+  return (
+    <>
+      {groupItemsByWorkspace(dayItems).map(({ workspaceId, items }) => (
+        <div
+          key={workspaceId}
+          className="space-y-0.5 rounded-md border p-0.5"
+          style={
+            workspaceId >= 0
+              ? { borderColor: resolveWorkspaceColor(workspaceId) }
+              : undefined
+          }
+        >
+          {items.map((item) => (
+            <ScheduleChip key={calendarItemKey(item, item.workspaceId)} item={item} />
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
 
 function CalendarMonthGrid({
   days,
@@ -120,6 +161,8 @@ function CalendarMonthGrid({
   itemsForDay,
   onSelectDay,
   enableDaySelection = true,
+  groupChipsByWorkspace = false,
+  resolveWorkspaceColor,
 }: {
   days: Array<{ date: Date | null; key: string }>
   selectedDay: string | null
@@ -127,6 +170,8 @@ function CalendarMonthGrid({
   itemsForDay: (day: Date) => CalendarChipItem[]
   onSelectDay?: (dayIso: string) => void
   enableDaySelection?: boolean
+  groupChipsByWorkspace?: boolean
+  resolveWorkspaceColor?: (workspaceId: number) => string
 }) {
   return (
     <>
@@ -170,13 +215,13 @@ function CalendarMonthGrid({
                 style={{ height: CHIP_VIEWPORT_HEIGHT }}
                 onWheel={chipListScrollable ? passWheelToScrollParent : undefined}
               >
-                {dayItems.map((item) => (
-                  <ScheduleChip
-                    key={calendarItemKey(item, item.workspaceId)}
-                    item={item}
-                    workspaceLabel={item.workspaceLabel}
+                {dayItems.length === 0 ? null : (
+                  <DayChipList
+                    dayItems={dayItems}
+                    groupChipsByWorkspace={groupChipsByWorkspace}
+                    resolveWorkspaceColor={resolveWorkspaceColor}
                   />
-                ))}
+                )}
               </div>
               <div className="mt-auto flex min-h-2 flex-wrap justify-center gap-0.5 md:hidden">
                 {dots.map((color) => (
@@ -228,6 +273,8 @@ export function CalendarMonthCard({
   enableDaySelection = true,
   showFocusFilters = true,
   scrollContent = false,
+  groupChipsByWorkspace = false,
+  resolveWorkspaceColor,
 }: {
   days: Array<{ date: Date | null; key: string }>
   selectedDay: string | null
@@ -242,6 +289,8 @@ export function CalendarMonthCard({
   enableDaySelection?: boolean
   showFocusFilters?: boolean
   scrollContent?: boolean
+  groupChipsByWorkspace?: boolean
+  resolveWorkspaceColor?: (workspaceId: number) => string
 }) {
   return (
     <Card className={cn(scrollContent && 'flex max-h-[46vh] min-h-0 flex-col overflow-hidden md:max-h-none md:flex-1')}>
@@ -277,6 +326,8 @@ export function CalendarMonthCard({
           itemsForDay={itemsForDay}
           onSelectDay={onSelectDay}
           enableDaySelection={enableDaySelection}
+          groupChipsByWorkspace={groupChipsByWorkspace}
+          resolveWorkspaceColor={resolveWorkspaceColor}
         />
       </CardContent>
     </Card>

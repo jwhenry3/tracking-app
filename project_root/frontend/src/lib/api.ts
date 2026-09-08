@@ -165,10 +165,11 @@ export async function updateWorkspaceSettings(
   workspaceId: number,
   name: string,
   focusAreas: WorkspaceFocusArea[],
+  color?: string | null,
 ) {
   return request<Workspace>(
     `/api/workspaces/${workspaceId}/settings`,
-    { method: 'PATCH', body: JSON.stringify({ name, focus_areas: focusAreas }) },
+    { method: 'PATCH', body: JSON.stringify({ name, focus_areas: focusAreas, color: color ?? null }) },
     token,
   )
 }
