@@ -3,7 +3,6 @@ import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide
 import { useNavigate } from 'react-router-dom'
 
 import { CalendarMonthCard } from '@/components/calendar/CalendarMonthCard'
-import { WorkspaceMultiSelect } from '@/components/calendar/WorkspaceMultiSelect'
 import { EntryTypeIcon } from '@/components/ops/EntryTypeIcon'
 import { OccurrenceMeta } from '@/components/forms/OccurrenceScopePicker'
 import { PageHeader, PageHeaderDivider, PageHeaderIconButton, PageHeaderTextButton } from '@/components/layout/PageHeader'
@@ -17,10 +16,6 @@ import {
   toggleCalendarFocusFilter,
   type CalendarFocusFilter,
 } from '@/lib/calendarFocusFilter'
-import {
-  loadCentralCalendarWorkspaceFilter,
-  saveCentralCalendarWorkspaceFilter,
-} from '@/lib/centralCalendarWorkspaceFilter'
 import type { CentralCalendarItem } from '@/lib/calendarTypes'
 import {
   buildMonthDays,
@@ -46,6 +41,7 @@ import { describeRecurrence } from '@/lib/recurrence'
 import { workspaceHasFocus } from '@/lib/workspaceFocus'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
+import { useCentralCalendarFilterStore } from '@/stores/centralCalendarFilterStore'
 
 function money(value: number) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
@@ -55,7 +51,7 @@ export function CentralCalendarView() {
   const navigate = useNavigate()
   const workspaces = useAuthStore((state) => state.workspaces)
   const setActiveWorkspace = useAuthStore((state) => state.setActiveWorkspace)
-  const workspaceIds = useMemo(() => workspaces.map((workspace) => workspace.id), [workspaces])
+  const selectedWorkspaceIds = useCentralCalendarFilterStore((state) => state.selectedWorkspaceIds)
 
   const showEventsFilter = workspaces.some((workspace) => workspaceHasFocus(workspace, 'planning'))
   const showFinancesFilter = workspaces.some((workspace) => workspaceHasFocus(workspace, 'finances'))
@@ -63,9 +59,6 @@ export function CentralCalendarView() {
   const [cursor, setCursor] = useState(() => new Date())
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [focusFilter, setFocusFilter] = useState<CalendarFocusFilter>(defaultCalendarFocusFilter)
-  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<number[]>(() =>
-    loadCentralCalendarWorkspaceFilter(workspaceIds),
-  )
 
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
   const todayIso = toIsoDate(new Date())
@@ -100,17 +93,6 @@ export function CentralCalendarView() {
   }, [showEventsFilter, showFinancesFilter])
 
   useEffect(() => {
-    setSelectedWorkspaceIds((current) => {
-      const saved = loadCentralCalendarWorkspaceFilter(workspaceIds)
-      if (workspaceIds.length === 0) return current
-      if (current.length === 0) return saved
-      const allowed = new Set(workspaceIds)
-      const next = current.filter((id) => allowed.has(id))
-      return next.length > 0 ? next : saved
-    })
-  }, [workspaceIds])
-
-  useEffect(() => {
     setSelectedDay((current) => {
       if (current && monthDayIsos.includes(current)) return current
       return null
@@ -124,11 +106,6 @@ export function CentralCalendarView() {
 
   function toggleFocusFilter(area: keyof CalendarFocusFilter) {
     persistFocusFilter(toggleCalendarFocusFilter(focusFilter, area))
-  }
-
-  function persistWorkspaceFilter(next: number[]) {
-    setSelectedWorkspaceIds(next)
-    saveCentralCalendarWorkspaceFilter(next)
   }
 
   function handleSelectDay(dayIso: string) {
@@ -181,14 +158,6 @@ export function CentralCalendarView() {
   }
 
   const splitView = selectedDay !== null
-
-  const calendarHeaderActions = (
-    <WorkspaceMultiSelect
-      workspaces={workspaces}
-      selectedIds={selectedWorkspaceIds}
-      onChange={persistWorkspaceFilter}
-    />
-  )
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -247,7 +216,6 @@ export function CentralCalendarView() {
               showEventsFilter={showEventsFilter}
               showFinancesFilter={showFinancesFilter}
               onToggleFocusFilter={toggleFocusFilter}
-              headerActions={calendarHeaderActions}
             />
 
             {selectedDay ? (
@@ -318,7 +286,6 @@ export function CentralCalendarView() {
               showEventsFilter={showEventsFilter}
               showFinancesFilter={showFinancesFilter}
               onToggleFocusFilter={toggleFocusFilter}
-              headerActions={calendarHeaderActions}
             />
 
             <Card>

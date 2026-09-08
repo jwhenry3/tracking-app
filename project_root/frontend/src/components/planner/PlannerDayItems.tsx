@@ -31,97 +31,131 @@ export function PlannerDayItems({
 }: PlannerDayItemsProps) {
   const queryClient = useQueryClient()
   const { canManagePlanning } = useWorkspacePermissions()
-  const [itemTitle, setItemTitle] = useState('')
+  const [draftTitles, setDraftTitles] = useState<Record<number, string>>({})
   const dayQuery = usePlannerDayQuery(workspaceId, date)
 
-  const dailyListId = dayQuery.data?.dailyListId ?? null
-  const items = dayQuery.data?.items ?? []
-  const notes = dayQuery.data?.notes ?? []
-  const primaryNote = notes[0] ?? null
+  const dailyLists = dayQuery.data?.dailyLists ?? []
+  const hasLoadedLists = dailyLists.length > 0 || dayQuery.data?.dailyListId != null
 
   async function refreshDayItems() {
     await invalidatePlannerDay(queryClient, workspaceId, date)
   }
 
-  async function handleCreateItem(event: FormEvent) {
+  async function handleCreateItem(event: FormEvent, listId: number) {
     event.preventDefault()
-    if (!dailyListId || !itemTitle.trim()) return
-    await createTodo(token, workspaceId, { list_id: dailyListId, title: itemTitle.trim() })
-    setItemTitle('')
+    const title = draftTitles[listId]?.trim()
+    if (!title) return
+    await createTodo(token, workspaceId, { list_id: listId, title })
+    setDraftTitles((current) => ({ ...current, [listId]: '' }))
     await refreshDayItems()
   }
 
-  if (dayQuery.isLoading && dailyListId === null) {
+  if (dayQuery.isLoading && !hasLoadedLists) {
     return <p className="text-sm text-muted-foreground">Loading lists…</p>
   }
 
   const showCheckListSection = section !== 'notes'
   const showNotesSection = section !== 'checklists'
 
+  function renderCheckList(list: (typeof dailyLists)[number]) {
+    const itemTitle = draftTitles[list.id] ?? ''
+    return (
+      <div key={list.id}>
+        {dailyLists.length > 1 ? (
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {list.name}
+          </p>
+        ) : section === 'all' ? (
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Check list</p>
+        ) : null}
+        <div className="space-y-0.5">
+          {list.items.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No items for this day.</p>
+          ) : (
+            list.items.map((item) => (
+              <InlineCheckListItem
+                key={item.id}
+                token={token}
+                workspaceId={workspaceId}
+                item={item}
+                compact
+                onChange={() => void refreshDayItems()}
+              />
+            ))
+          )}
+          {canManagePlanning ? (
+            <form onSubmit={(event) => void handleCreateItem(event, list.id)}>
+              <div className="flex gap-1.5">
+                <Input
+                  id={`checklist-item-${date}-${list.id}`}
+                  value={itemTitle}
+                  onChange={(event) =>
+                    setDraftTitles((current) => ({ ...current, [list.id]: event.target.value }))
+                  }
+                  placeholder="Add a check list item"
+                  className="h-7 flex-1 text-sm"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 p-0"
+                  disabled={!itemTitle.trim()}
+                  aria-label="Add check list item"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
+  function renderNotes(list: (typeof dailyLists)[number]) {
+    const primaryNote = list.notes[0] ?? null
+    return (
+      <div key={`notes-${list.id}`}>
+        {dailyLists.length > 1 ? (
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {list.name} notes
+          </p>
+        ) : section === 'all' ? (
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
+        ) : null}
+        <DayNotesEditor
+          token={token}
+          workspaceId={workspaceId}
+          listId={list.id}
+          note={primaryNote}
+          onSaved={() => void refreshDayItems()}
+        />
+      </div>
+    )
+  }
+
+  const noteLists = dailyLists.filter((list) => list.notes.length > 0 || dailyLists.length === 1)
+  const notesTargetLists = noteLists.length > 0 ? noteLists : dailyLists.slice(0, 1)
+
   return (
     <div className={cn(section === 'all' ? 'space-y-3 pt-2' : 'space-y-2')}>
       {showCheckListSection ? (
         showCheckLists ? (
-          <div>
-            {section === 'all' ? (
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Check list</p>
-            ) : null}
-            <div className="space-y-0.5">
-              {items.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No items for this day.</p>
-              ) : (
-                items.map((item) => (
-                  <InlineCheckListItem
-                    key={item.id}
-                    token={token}
-                    workspaceId={workspaceId}
-                    item={item}
-                    compact
-                    onChange={() => void refreshDayItems()}
-                  />
-                ))
-              )}
-              {canManagePlanning ? (
-              <form onSubmit={(event) => void handleCreateItem(event)}>
-                <div className="flex gap-1.5">
-                  <Input
-                    id={`checklist-item-${date}`}
-                    value={itemTitle}
-                    onChange={(event) => setItemTitle(event.target.value)}
-                    placeholder="Add a check list item"
-                    className="h-7 flex-1 text-sm"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="h-7 w-7 shrink-0 p-0"
-                    disabled={!dailyListId || !itemTitle.trim()}
-                    aria-label="Add check list item"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </form>
-              ) : null}
+          dailyLists.length > 0 ? (
+            <div className="space-y-3">
+              {dailyLists.map((list) => renderCheckList(list))}
             </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No check lists for this day.</p>
+          )
         ) : (
           <p className="text-sm text-muted-foreground">Check list hidden for this day.</p>
         )
       ) : null}
 
-      {showNotesSection && dailyListId ? (
-        <div>
-          {section === 'all' ? (
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
-          ) : null}
-          <DayNotesEditor
-            token={token}
-            workspaceId={workspaceId}
-            listId={dailyListId}
-            note={primaryNote}
-            onSaved={() => void refreshDayItems()}
-          />
+      {showNotesSection && notesTargetLists.length > 0 ? (
+        <div className="space-y-3">
+          {notesTargetLists.map((list) => renderNotes(list))}
         </div>
       ) : null}
     </div>

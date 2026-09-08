@@ -6,7 +6,7 @@ type RealtimeState = {
   connected: boolean
   socket: WebSocket | null
   connectionId: number
-  connect: (token: string, workspaceId: number) => number
+  connect: (token: string) => number
   disconnect: (connectionId?: number) => void
   onUpdate: ((payload: unknown) => void) | null
   setOnUpdate: (handler: ((payload: unknown) => void) | null) => void
@@ -45,12 +45,12 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
     }
   },
 
-  connect: (token, workspaceId) => {
+  connect: (token) => {
     const { socket: existing } = get()
     if (existing) closeSocket(existing)
 
     const connectionId = ++nextConnectionId
-    const socket = new WebSocket(getWebSocketUrl(token, workspaceId))
+    const socket = new WebSocket(getWebSocketUrl(token))
 
     socket.onopen = () => {
       if (get().connectionId !== connectionId) return

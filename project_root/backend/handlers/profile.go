@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"fullstack-app/hub"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -91,7 +93,18 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
+	var previousUsername string
+	var previousDisplayName sql.NullString
+	if err := h.DB.QueryRow(
+		"SELECT username, display_name FROM users WHERE id = ?",
+		userID,
+	).Scan(&previousUsername, &previousDisplayName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update profile"})
+		return
+	}
+
 	usernameChanged := false
+	displayNameChanged := false
 
 	if req.Username != nil {
 		newUsername := strings.TrimSpace(*req.Username)
@@ -145,12 +158,17 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 
 	if req.DisplayName != nil {
 		trimmed := strings.TrimSpace(*req.DisplayName)
+		previousValue := ""
+		if previousDisplayName.Valid {
+			previousValue = strings.TrimSpace(previousDisplayName.String)
+		}
 		if trimmed == "" {
 			_, err := h.DB.Exec("UPDATE users SET display_name = NULL WHERE id = ?", userID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update profile"})
 				return
 			}
+			displayNameChanged = previousValue != ""
 		} else if len(trimmed) > 100 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "display name must be 100 characters or fewer"})
 			return
@@ -160,6 +178,7 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update profile"})
 				return
 			}
+			displayNameChanged = trimmed != previousValue
 		}
 	}
 
@@ -205,7 +224,58 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		response["token"] = token
 	}
 
+	if displayNameChanged || usernameChanged {
+		h.broadcastUserProfileUpdate(userID.(int), response, previousUsername)
+	}
+
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *AuthHandler) broadcastUserProfileUpdate(userID int, profile gin.H, previousUsername string) {
+	if h.Hub == nil {
+		return
+	}
+
+	username, _ := profile["username"].(string)
+	var displayName any
+	if value, ok := profile["display_name"]; ok {
+		displayName = value
+	} else {
+		displayName = nil
+	}
+
+	payloadData := gin.H{
+		"user_id":      userID,
+		"username":     username,
+		"display_name": displayName,
+	}
+	if previousUsername != "" && previousUsername != username {
+		payloadData["previous_username"] = previousUsername
+	}
+
+	payload, err := json.Marshal(payloadData)
+	if err != nil {
+		return
+	}
+
+	rows, err := h.DB.Query(`SELECT workspace_id FROM workspace_members WHERE user_id = ?`, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var workspaceID int
+		if err := rows.Scan(&workspaceID); err != nil {
+			continue
+		}
+		h.Hub.BroadcastWorkspace(workspaceID, hub.Message{
+			Type:    "update",
+			Entity:  "user_profile",
+			Action:  "updated",
+			Payload: payload,
+		})
+	}
 }
 
 func (h *AuthHandler) UploadAvatar(c *gin.Context) {

@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { AuthBrandHeader } from '@/components/layout/AuthBrandHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,16 +33,15 @@ export function RegisterPage() {
         createWorkspace && trimmedWorkspace ? trimmedWorkspace : undefined,
         email.trim() || undefined,
       )
-      const { activeWorkspaceId, workspaces } = useAuthStore.getState()
-      const workspaceId = activeWorkspaceId ?? workspaces[0]?.id
-      navigate(workspaceId ? `/w/${workspaceId}/calendar` : '/', { replace: true })
+      navigate('/calendar', { replace: true })
     } catch {
       // handled in store
     }
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <AuthBrandHeader />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Create your account</CardTitle>

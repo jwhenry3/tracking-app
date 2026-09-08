@@ -5,6 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { deleteAvatar, updateProfileSettings, uploadAvatar } from '@/lib/api'
+import { queryClient } from '@/lib/queryClient'
+import {
+  invalidateUserProfileQueries,
+  syncLocalUserProfile,
+} from '@/lib/queries/userProfileSync'
 import { getUserDisplayName } from '@/lib/userProfile'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -16,6 +21,7 @@ export function UserProfileSettings() {
   const avatarUrl = useAuthStore((s) => s.avatarUrl)
   const avatarVersion = useAuthStore((s) => s.avatarVersion)
   const applyUser = useAuthStore((s) => s.applyUser)
+  const workspaces = useAuthStore((s) => s.workspaces)
 
   const [name, setName] = useState(displayName ?? '')
   const [usernameValue, setUsernameValue] = useState(username ?? '')
@@ -52,12 +58,21 @@ export function UserProfileSettings() {
     setFeedback(null)
     try {
       const trimmed = name.trim()
+      const previousUsername = username ?? ''
       const user = await updateProfileSettings(token, {
         username: nextUsername,
         email: emailValue.trim() || null,
         display_name: trimmed || null,
       })
       applyUser(user)
+
+      const workspaceIds = workspaces.map((workspace) => workspace.id)
+      if (user.username !== previousUsername) {
+        await Promise.all(workspaceIds.map((workspaceId) => invalidateUserProfileQueries(queryClient, workspaceId)))
+      } else {
+        syncLocalUserProfile(user, workspaceIds)
+      }
+
       setFeedback('Profile saved.')
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Could not save profile')

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"fullstack-app/hub"
@@ -18,12 +19,17 @@ type ChatHandler struct {
 	UploadDir string
 }
 
+type conversationMemberResponse struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
+
 type conversationResponse struct {
-	ID          int      `json:"id"`
-	WorkspaceID int      `json:"workspace_id"`
-	Kind        string   `json:"kind"`
-	Title       string   `json:"title"`
-	Members     []string `json:"members,omitempty"`
+	ID          int                          `json:"id"`
+	WorkspaceID int                          `json:"workspace_id"`
+	Kind        string                       `json:"kind"`
+	Title       string                       `json:"title"`
+	Members     []conversationMemberResponse `json:"members,omitempty"`
 }
 
 type attachmentResponse struct {
@@ -35,13 +41,14 @@ type attachmentResponse struct {
 }
 
 type messageResponse struct {
-	ID             int                  `json:"id"`
-	ConversationID int                  `json:"conversation_id"`
-	SenderID       int                  `json:"sender_id"`
-	SenderUsername string               `json:"sender_username"`
-	Content        string               `json:"content"`
-	CreatedAt      string               `json:"created_at"`
-	Attachments    []attachmentResponse `json:"attachments"`
+	ID                int                  `json:"id"`
+	ConversationID    int                  `json:"conversation_id"`
+	SenderID          int                  `json:"sender_id"`
+	SenderUsername    string               `json:"sender_username"`
+	SenderDisplayName string               `json:"sender_display_name"`
+	Content           string               `json:"content"`
+	CreatedAt         string               `json:"created_at"`
+	Attachments       []attachmentResponse `json:"attachments"`
 }
 
 type sendMessageRequest struct {
@@ -85,7 +92,7 @@ func (h *ChatHandler) ListConversations(c *gin.Context) {
 			return
 		}
 		conv.Title = conversationTitle(h.DB, conv)
-		conv.Members = conversationMembernames(h.DB, conv.ID)
+		conv.Members = conversationMembers(h.DB, conv.ID)
 		conversations = append(conversations, conv)
 	}
 
@@ -107,7 +114,7 @@ func (h *ChatHandler) ListMessages(c *gin.Context) {
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT m.id, m.conversation_id, m.sender_id, u.username, m.content, m.created_at
+		SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.content, m.created_at
 		FROM chat_messages m
 		INNER JOIN users u ON u.id = m.sender_id
 		INNER JOIN chat_conversations c ON c.id = m.conversation_id
@@ -123,10 +130,12 @@ func (h *ChatHandler) ListMessages(c *gin.Context) {
 	for rows.Next() {
 		var msg messageResponse
 		var createdAt time.Time
-		if err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.SenderUsername, &msg.Content, &createdAt); err != nil {
+		var displayName sql.NullString
+		if err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.SenderUsername, &displayName, &msg.Content, &createdAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read message"})
 			return
 		}
+		msg.SenderDisplayName = userDisplayName(displayName, msg.SenderUsername)
 		msg.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		msg.Attachments = []attachmentResponse{}
 		messages = append(messages, msg)
@@ -248,7 +257,7 @@ func (h *ChatHandler) CreateDirectConversation(c *gin.Context) {
 		ID: conversationID, WorkspaceID: workspaceID.(int), Kind: "direct",
 	}
 	conv.Title = conversationTitle(h.DB, conv)
-	conv.Members = conversationMembernames(h.DB, conversationID)
+	conv.Members = conversationMembers(h.DB, conversationID)
 	c.JSON(http.StatusOK, conv)
 }
 
@@ -378,15 +387,17 @@ func findDirectConversation(db *sql.DB, workspaceID, userA, userB int) (int, err
 func loadMessageByID(db *sql.DB, messageID int) (messageResponse, error) {
 	var msg messageResponse
 	var createdAt time.Time
+	var displayName sql.NullString
 	err := db.QueryRow(`
-		SELECT m.id, m.conversation_id, m.sender_id, u.username, m.content, m.created_at
+		SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.content, m.created_at
 		FROM chat_messages m
 		INNER JOIN users u ON u.id = m.sender_id
 		WHERE m.id = ?`, messageID,
-	).Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.SenderUsername, &msg.Content, &createdAt)
+	).Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.SenderUsername, &displayName, &msg.Content, &createdAt)
 	if err != nil {
 		return messageResponse{}, err
 	}
+	msg.SenderDisplayName = userDisplayName(displayName, msg.SenderUsername)
 	msg.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 	msg.Attachments = []attachmentResponse{}
 	messages := []messageResponse{msg}
@@ -433,22 +444,32 @@ func conversationTitle(db *sql.DB, conv conversationResponse) string {
 		return name + " chat"
 	}
 
-	members := conversationMembernames(db, conv.ID)
+	members := conversationMembers(db, conv.ID)
 	if len(members) == 1 {
-		return members[0] + " (you)"
+		return members[0].DisplayName + " (you)"
 	}
 	if len(members) == 2 {
-		return members[0] + ", " + members[1]
+		return members[0].DisplayName + ", " + members[1].DisplayName
 	}
 	if len(members) > 0 {
-		return members[0]
+		return members[0].DisplayName
 	}
 	return "Direct message"
 }
 
-func conversationMembernames(db *sql.DB, conversationID int) []string {
+func userDisplayName(displayName sql.NullString, username string) string {
+	if displayName.Valid {
+		trimmed := strings.TrimSpace(displayName.String)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return username
+}
+
+func conversationMembers(db *sql.DB, conversationID int) []conversationMemberResponse {
 	rows, err := db.Query(`
-		SELECT u.username
+		SELECT u.username, u.display_name
 		FROM chat_conversation_members cm
 		INNER JOIN users u ON u.id = cm.user_id
 		WHERE cm.conversation_id = ?
@@ -458,13 +479,15 @@ func conversationMembernames(db *sql.DB, conversationID int) []string {
 	}
 	defer rows.Close()
 
-	names := []string{}
+	members := []conversationMemberResponse{}
 	for rows.Next() {
-		var username string
-		if err := rows.Scan(&username); err != nil {
-			return names
+		var member conversationMemberResponse
+		var displayName sql.NullString
+		if err := rows.Scan(&member.Username, &displayName); err != nil {
+			return members
 		}
-		names = append(names, username)
+		member.DisplayName = userDisplayName(displayName, member.Username)
+		members = append(members, member)
 	}
-	return names
+	return members
 }

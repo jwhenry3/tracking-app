@@ -14,13 +14,15 @@ import { RegisterPage } from '@/pages/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { WorkspaceOnboardingPage } from '@/pages/WorkspaceOnboardingPage'
+import { APP_NAME } from '@/lib/branding'
 import { defaultManageTab } from '@/lib/manageTabs'
 import { useAuthStore } from '@/stores/authStore'
 
 function SessionLoadingScreen() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background text-muted-foreground">
-      Loading…
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-2 bg-background text-muted-foreground">
+      <p className="text-sm font-semibold text-foreground">{APP_NAME}</p>
+      <p>Loading…</p>
     </div>
   )
 }
@@ -44,7 +46,7 @@ function WorkspaceHome() {
   if (!sessionReady) return <SessionLoadingScreen />
   if (!workspaceId) return <WorkspaceOnboardingPage />
 
-  return <Navigate to={`/w/${workspaceId}/calendar`} replace />
+  return <Navigate to="/calendar" replace />
 }
 
 function AuthenticatedEntry() {

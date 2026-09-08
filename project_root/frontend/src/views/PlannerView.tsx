@@ -14,6 +14,7 @@ import type { PlannerScheduleItem } from '@/components/planner/PlannerScheduleRo
 import { WeeklyPlannerGrid } from '@/components/planner/WeeklyPlannerGrid'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDayLabel, normalizeFinanceDate } from '@/lib/financeUtils'
+import { toLocalIsoDate } from '@/lib/calendarUtils'
 import { invalidatePlannerDay } from '@/lib/queries/invalidate'
 import {
   useBillsQuery,
@@ -44,7 +45,7 @@ const plannerMeta = {
 } as const
 
 function isoDate(date: Date) {
-  return date.toISOString().slice(0, 10)
+  return toLocalIsoDate(date)
 }
 
 function addDays(date: Date, days: number) {
@@ -67,7 +68,9 @@ function isInRange(iso: string, start: string, end: string) {
 }
 
 function formatDayToggleLabel(day: string) {
-  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
+  const normalized = normalizeFinanceDate(day)
+  if (!normalized) return '—'
+  return new Date(`${normalized}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

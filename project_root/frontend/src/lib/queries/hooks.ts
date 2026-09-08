@@ -241,14 +241,32 @@ export function usePlannerDayQuery(workspaceId: number | null, date: string, ena
     enabled: Boolean(token && workspaceId && date && enabled),
     queryFn: async () => {
       const daily = await ensureDailyList(token!, workspaceId!, date)
-      const [checkListData, noteData] = await Promise.all([
-        fetchTodos(token!, workspaceId!, daily.list_id),
-        fetchNotes(token!, workspaceId!, daily.list_id),
-      ])
+      const listsResponse = await fetchTodoLists(token!, workspaceId!, date)
+      const dailyLists = listsResponse.lists.filter((list) => list.kind === 'daily')
+
+      const listData = await Promise.all(
+        dailyLists.map(async (list) => {
+          const [checkListData, noteData] = await Promise.all([
+            fetchTodos(token!, workspaceId!, list.id),
+            fetchNotes(token!, workspaceId!, list.id),
+          ])
+          return {
+            id: list.id,
+            name: list.name,
+            isRecurring: Boolean(list.is_recurring),
+            items: checkListData.todos,
+            notes: noteData.notes,
+          }
+        }),
+      )
+
+      const primaryList = listData.find((list) => list.id === daily.list_id) ?? listData[0]
+
       return {
         dailyListId: daily.list_id,
-        items: checkListData.todos,
-        notes: noteData.notes,
+        dailyLists: listData,
+        items: primaryList?.items ?? [],
+        notes: primaryList?.notes ?? [],
       }
     },
   })

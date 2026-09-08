@@ -12,12 +12,17 @@ import {
   Plus,
   Settings2,
   Wallet,
+  Wifi,
+  WifiOff,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
+import { WorkspaceChecklist } from '@/components/calendar/WorkspaceChecklist'
 import { AddWorkspaceDialog } from '@/components/workspace/AddWorkspaceDialog'
+import { ProductBrandHeader } from '@/components/layout/ProductBrandHeader'
 import { RealtimeQuerySync } from '@/components/layout/RealtimeQuerySync'
+import { DueDateToastSync, RealtimeToastSync } from '@/components/layout/ToastSync'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { UserProfilePanel } from '@/components/profile/UserProfilePanel'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
@@ -26,6 +31,7 @@ import type { WorkspaceFocusArea } from '@/lib/types'
 import { isWorkspaceRouteAllowed, workspaceHasFocus } from '@/lib/workspaceFocus'
 import { canManageWorkspace } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
+import { useCentralCalendarFilterStore } from '@/stores/centralCalendarFilterStore'
 import { useRealtimeStore } from '@/stores/realtimeStore'
 
 type NavItem = {
@@ -105,7 +111,12 @@ export function AppShell() {
   const isCentralCalendar = /^\/calendar\/?$/.test(location.pathname)
   const token = useAuthStore((s) => s.token)
   const workspaces = useAuthStore((s) => s.workspaces)
+  const workspaceIds = useMemo(() => workspaces.map((workspace) => workspace.id), [workspaces])
   const activeWorkspaceId = useAuthStore((s) => s.activeWorkspaceId)
+  const selectedCalendarWorkspaceIds = useCentralCalendarFilterStore((s) => s.selectedWorkspaceIds)
+  const syncCalendarWorkspaces = useCentralCalendarFilterStore((s) => s.syncWorkspaces)
+  const toggleCalendarWorkspace = useCentralCalendarFilterStore((s) => s.toggleWorkspace)
+  const selectAllCalendarWorkspaces = useCentralCalendarFilterStore((s) => s.selectAllWorkspaces)
   const setActiveWorkspace = useAuthStore((s) => s.setActiveWorkspace)
   const loadWorkspaces = useAuthStore((s) => s.loadWorkspaces)
   const logout = useAuthStore((s) => s.logout)
@@ -180,18 +191,24 @@ export function AppShell() {
   )
 
   useEffect(() => {
-    if (!token || !workspaceId || isCentralCalendar) return
+    if (!token) return
 
     let connectionId: number | undefined
     const timeoutId = window.setTimeout(() => {
-      connectionId = connect(token, Number(workspaceId))
+      connectionId = connect(token)
     }, 0)
 
     return () => {
       window.clearTimeout(timeoutId)
       if (connectionId !== undefined) disconnect(connectionId)
     }
-  }, [token, workspaceId, isCentralCalendar, connect, disconnect])
+  }, [token, workspaceIds.join(','), connect, disconnect])
+
+  useLayoutEffect(() => {
+    if (isCentralCalendar) {
+      syncCalendarWorkspaces(workspaceIds)
+    }
+  }, [isCentralCalendar, workspaceIds, syncCalendarWorkspaces])
 
   useEffect(() => {
     if (isCentralCalendar || !workspaceId || !currentWorkspace) return
@@ -282,15 +299,18 @@ export function AppShell() {
     return location.pathname === `${base}${item.to}` || location.pathname.startsWith(`${base}${item.to}/`)
   }
 
-  function renderNavLinks(onNavigate?: () => void) {
-    if (isCentralCalendar) {
-      return (
-        <p className="px-1 text-sm text-muted-foreground">
-          Use the workspace filter on the calendar to choose which workspaces to include.
-        </p>
-      )
-    }
+  function renderCentralCalendarNav() {
+    return (
+      <WorkspaceChecklist
+        workspaces={workspaces}
+        selectedIds={selectedCalendarWorkspaceIds}
+        onToggle={toggleCalendarWorkspace}
+        onSelectAll={() => selectAllCalendarWorkspaces(workspaceIds)}
+      />
+    )
+  }
 
+  function renderNavLinks(onNavigate?: () => void) {
     if (!effectiveWorkspaceId) {
       return null
     }
@@ -388,6 +408,8 @@ export function AppShell() {
     )
   }
 
+  const homePath = '/calendar'
+
   return (
     <>
       <div className="flex h-dvh flex-col overflow-hidden overscroll-none bg-background text-foreground">
@@ -404,29 +426,23 @@ export function AppShell() {
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left text-base font-semibold"
-            onClick={() => currentWorkspace && !isCentralCalendar && setWorkspacePanelOpen(true)}
+            onClick={() => {
+              if (isCentralCalendar) {
+                setMobileNavOpen(true)
+                return
+              }
+              if (currentWorkspace) setWorkspacePanelOpen(true)
+            }}
           >
             {isCentralCalendar ? 'All calendars' : (currentWorkspace?.name ?? 'Home')}
           </button>
-          <UserMenu
-            variant="header"
-            connected={connected}
-            onOpenSettings={() => setProfilePanelOpen(true)}
-            onLogout={handleLogout}
-          />
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1">
           <aside className="hidden w-[72px] shrink-0 flex-col items-center gap-2 border-r bg-[#1a1d21] py-3 text-white md:flex">
-            <UserMenu
-              connected={connected}
-              onOpenSettings={() => setProfilePanelOpen(true)}
-              onLogout={handleLogout}
-            />
-
             {renderCentralCalendarButton()}
 
-            <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
               {workspaces.map((workspace) => (
                 <button
                   key={workspace.id}
@@ -434,7 +450,7 @@ export function AppShell() {
                   title={Number(workspaceId) === workspace.id ? `${workspace.name} · members & invites` : workspace.name}
                   onClick={() => handleWorkspaceClick(workspace)}
                   className={cn(
-                    'flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-semibold transition',
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold transition',
                     Number(workspaceId) === workspace.id && !isCentralCalendar
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-white/10 hover:bg-white/20',
@@ -443,46 +459,68 @@ export function AppShell() {
                   {workspaceInitials(workspace.name)}
                 </button>
               ))}
-            </div>
-
-            <div className="mt-auto flex flex-col items-center gap-2">
               <button
                 type="button"
-                className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20"
                 title="Add workspace"
                 onClick={() => setAddWorkspaceOpen(true)}
               >
                 <Plus className="h-5 w-5" />
               </button>
             </div>
+
+            <div className="mt-auto w-full shrink-0">
+              <UserMenu
+                connected={connected}
+                onOpenSettings={() => setProfilePanelOpen(true)}
+                onLogout={handleLogout}
+              />
+            </div>
           </aside>
 
-          <aside className={cn('hidden w-64 shrink-0 flex-col border-r bg-muted/20 md:flex', isCentralCalendar && 'md:hidden')}>
-            <div className="border-b px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {isCentralCalendar ? 'Overview' : 'Workspace'}
-              </p>
-              <button
-                type="button"
-                className="truncate text-left text-lg font-semibold hover:underline"
-                onClick={() => currentWorkspace && !isCentralCalendar && setWorkspacePanelOpen(true)}
-              >
-                {isCentralCalendar ? 'All calendars' : (currentWorkspace?.name ?? 'Home')}
-              </button>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {isCentralCalendar
-                  ? 'Schedule across all workspaces'
-                  : connected
-                    ? 'Live sync connected'
-                    : 'Live sync disconnected'}
-              </p>
+          <aside className="hidden w-64 shrink-0 flex-col border-r bg-muted/20 md:flex">
+            <div className="space-y-1 border-b px-4 py-3">
+              <ProductBrandHeader to={homePath} />
+              {isCentralCalendar ? (
+                <div
+                  className="flex min-w-0 items-center gap-1.5 px-0.5"
+                  title={connected ? 'Live sync connected' : 'Live sync disconnected'}
+                >
+                  {connected ? (
+                    <Wifi className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="truncate text-sm font-medium text-muted-foreground">All calendars</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-1.5 text-left hover:underline"
+                  title={connected ? 'Live sync connected' : 'Live sync disconnected'}
+                  onClick={() => currentWorkspace && setWorkspacePanelOpen(true)}
+                >
+                  {connected ? (
+                    <Wifi className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="truncate text-sm font-medium text-muted-foreground">
+                    {currentWorkspace?.name ?? 'Home'}
+                  </span>
+                </button>
+              )}
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-3">{renderNavLinks()}</nav>
+            <nav className="flex-1 overflow-y-auto p-3">
+              {isCentralCalendar ? renderCentralCalendarNav() : renderNavLinks()}
+            </nav>
           </aside>
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <RealtimeQuerySync />
+            <RealtimeToastSync />
+            <DueDateToastSync />
             <Outlet />
           </main>
         </div>
@@ -522,18 +560,49 @@ export function AppShell() {
             onClick={() => setMobileNavOpen(false)}
           />
           <div className="relative flex h-full w-[min(20rem,88vw)] flex-col bg-background shadow-xl">
-            <div className="flex items-center justify-between gap-2 border-b px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-              <p className="truncate text-base font-semibold">
-                {isCentralCalendar ? 'All calendars' : (currentWorkspace?.name ?? 'Home')}
-              </p>
-              <button
-                type="button"
-                className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-muted"
-                aria-label="Close navigation"
-                onClick={() => setMobileNavOpen(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
+            <div className="space-y-1 border-b px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+              <div className="flex items-center justify-between gap-2">
+                <ProductBrandHeader to={homePath} className="min-w-0 flex-1" />
+                <button
+                  type="button"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted"
+                  aria-label="Close navigation"
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              {isCentralCalendar ? (
+                <div
+                  className="flex min-w-0 items-center gap-1.5 px-0.5"
+                  title={connected ? 'Live sync connected' : 'Live sync disconnected'}
+                >
+                  {connected ? (
+                    <Wifi className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="truncate text-sm font-medium text-muted-foreground">All calendars</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-1.5 text-left"
+                  onClick={() => {
+                    if (currentWorkspace) setWorkspacePanelOpen(true)
+                    setMobileNavOpen(false)
+                  }}
+                >
+                  {connected ? (
+                    <Wifi className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <span className="truncate text-sm font-medium text-muted-foreground">
+                    {currentWorkspace?.name ?? 'Home'}
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="border-b bg-[#1a1d21] px-3 py-3 text-white">
@@ -546,8 +615,22 @@ export function AppShell() {
             </div>
 
             <nav className="min-h-0 flex-1 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              {renderNavLinks(() => setMobileNavOpen(false))}
+              {isCentralCalendar
+                ? renderCentralCalendarNav()
+                : renderNavLinks(() => setMobileNavOpen(false))}
             </nav>
+
+            <div className="border-t px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <UserMenu
+                variant="header"
+                connected={connected}
+                onOpenSettings={() => {
+                  setProfilePanelOpen(true)
+                  setMobileNavOpen(false)
+                }}
+                onLogout={handleLogout}
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -566,7 +649,7 @@ export function AppShell() {
         onComplete={async (result) => {
           await loadWorkspaces()
           if (result.status === 'created' || result.status === 'already_member') {
-            navigate(`/w/${result.workspace.id}/calendar`)
+            navigate('/calendar')
           }
         }}
       />

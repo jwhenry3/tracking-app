@@ -702,7 +702,7 @@ export async function ensureDailyList(token: string, workspaceId: number, date: 
 export async function createTodoList(
   token: string,
   workspaceId: number,
-  payload: { name: string; kind?: string; list_date?: string },
+  payload: { name: string; kind?: string; list_date?: string; recurrence?: string },
 ) {
   return request<TodoList>(
     `/api/workspaces/${workspaceId}/todo-lists`,
@@ -803,11 +803,11 @@ export async function deleteTodo(token: string, workspaceId: number, todoId: num
   )
 }
 
-export function getWebSocketUrl(token: string, workspaceId: number) {
+export function getWebSocketUrl(token: string) {
   const apiUrl = new URL(API_URL || window.location.origin)
   apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
   apiUrl.pathname = '/ws'
-  apiUrl.search = `token=${encodeURIComponent(token)}&workspace_id=${workspaceId}`
+  apiUrl.search = `token=${encodeURIComponent(token)}`
   apiUrl.hash = ''
   return apiUrl.toString()
 }

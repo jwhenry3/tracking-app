@@ -1,5 +1,6 @@
 import type { CalendarFocusFilter } from '@/lib/calendarFocusFilter'
 import type { CalendarItem } from '@/lib/calendarTypes'
+import { normalizeFinanceDate } from '@/lib/financeUtils'
 import { calendarLegendColors } from '@/lib/scheduleChipStyles'
 import type { PlannerScheduleItem } from '@/components/planner/PlannerScheduleRow'
 
@@ -12,7 +13,14 @@ export function endOfMonth(date: Date) {
 }
 
 export function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10)
+  return toLocalIsoDate(date)
+}
+
+export function toLocalIsoDate(date: Date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function isInRange(iso: string, start: string, end: string) {
@@ -27,7 +35,9 @@ export function calendarItemKey(item: CalendarItem, workspaceId?: number) {
 }
 
 export function formatDayToggleLabel(day: string) {
-  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
+  const normalized = normalizeFinanceDate(day)
+  if (!normalized) return '—'
+  return new Date(`${normalized}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

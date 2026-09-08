@@ -28,6 +28,7 @@ import {
   updateWorkspaceMember,
 } from '@/lib/api'
 import type { Workspace, WorkspaceAccessRequest, WorkspaceFocusArea, WorkspaceInvite, WorkspaceMember } from '@/lib/types'
+import { getUserDisplayName } from '@/lib/userProfile'
 import { WORKSPACE_FOCUS_OPTIONS, workspaceHasFocus } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
 import { useRealtimeStore } from '@/stores/realtimeStore'
@@ -138,10 +139,10 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
 
   async function handleAcceptInvite(inviteId: number) {
     if (!token) return
-    const result = await acceptInvite(token, inviteId)
+    await acceptInvite(token, inviteId)
     await loadWorkspaces()
     onOpenChange(false)
-    navigate(`/w/${result.workspace.id}/calendar`)
+    navigate('/calendar')
   }
 
   async function handleDeclineInvite(inviteId: number) {
@@ -159,9 +160,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
       await loadWorkspaces()
       setLeaveOpen(false)
       onOpenChange(false)
-      const remaining = useAuthStore.getState().workspaces
-      const next = remaining[0]
-      navigate(next ? `/w/${next.id}/calendar` : '/')
+      navigate('/calendar')
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Could not leave workspace')
     } finally {
@@ -171,9 +170,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
 
   function handleWorkspaceRemoved() {
     onOpenChange(false)
-    const remaining = useAuthStore.getState().workspaces
-    const next = remaining[0]
-    navigate(next ? `/w/${next.id}/calendar` : '/')
+    navigate('/calendar')
   }
 
   if (!workspace) {
@@ -240,7 +237,7 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
                   <ManageTableRow key={member.user_id}>
                     <ManageTableTd className="font-medium">
                       <span className="inline-flex items-center gap-2">
-                        {member.username}
+                        {getUserDisplayName({ display_name: member.display_name, username: member.username })}
                         {member.username === username ? (
                           <Badge className="bg-secondary text-secondary-foreground">You</Badge>
                         ) : null}

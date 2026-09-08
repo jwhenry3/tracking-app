@@ -19,9 +19,11 @@ import {
   useChatMessagesQuery,
   useWorkspaceMembersQuery,
 } from '@/lib/queries/hooks'
-import type { ChatConversation } from '@/lib/types'
+import type { ChatConversation, ChatConversationMember, WorkspaceMember } from '@/lib/types'
+import { getUserDisplayName } from '@/lib/userProfile'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
+import { useChatFocusStore } from '@/stores/chatFocusStore'
 
 const maxChatAttachments = 8
 const maxChatAttachmentBytes = 10 * 1024 * 1024
@@ -36,23 +38,31 @@ function findDirectConversation(
       (conversation) =>
         conversation.kind === 'direct'
         && conversation.members?.length === 1
-        && conversation.members[0] === currentUsername,
+        && conversation.members[0]?.username === currentUsername,
     )
   }
   return conversations.find(
     (conversation) =>
       conversation.kind === 'direct'
       && conversation.members?.length === 2
-      && conversation.members.includes(memberUsername)
-      && conversation.members.includes(currentUsername ?? ''),
+      && conversation.members.some((member) => member.username === memberUsername)
+      && conversation.members.some((member) => member.username === currentUsername),
   )
 }
 
-function directLabel(memberUsername: string, currentUsername: string | null) {
-  if (memberUsername === currentUsername) {
-    return `${memberUsername} (you)`
+function memberDisplayName(member: Pick<WorkspaceMember | ChatConversationMember, 'username' | 'display_name'>) {
+  return getUserDisplayName({ display_name: member.display_name, username: member.username })
+}
+
+function directLabel(
+  member: Pick<WorkspaceMember | ChatConversationMember, 'username' | 'display_name'>,
+  currentUsername: string | null,
+) {
+  const name = memberDisplayName(member)
+  if (member.username === currentUsername) {
+    return `${name} (you)`
   }
-  return memberUsername
+  return name
 }
 
 function chatStorageKey(workspaceId: string) {
@@ -63,6 +73,7 @@ export function ChatView() {
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
   const username = useAuthStore((s) => s.username)
+  const setChatFocus = useChatFocusStore((s) => s.setFocus)
   const queryClient = useQueryClient()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -98,17 +109,30 @@ export function ChatView() {
     () => [...members].sort((a, b) => {
       if (a.username === username) return -1
       if (b.username === username) return 1
-      return a.username.localeCompare(b.username)
+      return memberDisplayName(a).localeCompare(memberDisplayName(b))
     }),
     [members, username],
   )
 
   function selectConversation(conversationId: number) {
     setActiveConversationId(conversationId)
+    if (workspaceNumericId) {
+      setChatFocus(workspaceNumericId, conversationId)
+    }
     if (workspaceId) {
       sessionStorage.setItem(chatStorageKey(workspaceId), String(conversationId))
     }
   }
+
+  useEffect(() => {
+    if (!workspaceNumericId) {
+      setChatFocus(null, null)
+      return
+    }
+
+    setChatFocus(workspaceNumericId, activeConversationId)
+    return () => setChatFocus(null, null)
+  }, [workspaceNumericId, activeConversationId, setChatFocus])
 
   async function refreshChat(conversationId?: number | null) {
     if (!workspaceNumericId) return
@@ -214,10 +238,13 @@ export function ChatView() {
   const activeTitle = activeConversation
     ? activeConversation.kind === 'direct'
       ? (() => {
-          if (activeConversation.members?.length === 1 && activeConversation.members[0] === username) {
-            return directLabel(username ?? '', username)
+          if (
+            activeConversation.members?.length === 1
+            && activeConversation.members[0]?.username === username
+          ) {
+            return directLabel(activeConversation.members[0], username)
           }
-          const other = activeConversation.members?.find((member) => member !== username)
+          const other = activeConversation.members?.find((member) => member.username !== username)
           return other ? directLabel(other, username) : activeConversation.title
         })()
       : activeConversation.title
@@ -227,11 +254,11 @@ export function ChatView() {
     if (!activeConversation) return ''
     if (activeConversation.kind === 'group') return `group:${activeConversation.id}`
     const membersList = activeConversation.members ?? []
-    if (membersList.length === 1 && membersList[0] === username) {
+    if (membersList.length === 1 && membersList[0]?.username === username) {
       return `member:${username}`
     }
-    const other = membersList.find((member) => member !== username)
-    return other ? `member:${other}` : ''
+    const other = membersList.find((member) => member.username !== username)
+    return other ? `member:${other.username}` : ''
   })()
 
   async function handleMobileConversationChange(value: string) {
@@ -293,7 +320,7 @@ export function ChatView() {
                         isSelf && !isActive && 'opacity-90',
                       )}
                     >
-                      <p className="truncate font-medium">{directLabel(member.username, username)}</p>
+                      <p className="truncate font-medium">{directLabel(member, username)}</p>
                     </button>
                   )
                 })}
@@ -318,7 +345,7 @@ export function ChatView() {
               ) : null}
               {sortedMembers.map((member) => (
                 <option key={member.user_id} value={`member:${member.username}`}>
-                  {directLabel(member.username, username)}
+                  {directLabel(member, username)}
                 </option>
               ))}
             </select>
@@ -342,7 +369,12 @@ export function ChatView() {
                   return (
                     <div key={message.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
                       <div className={cn('max-w-[80%] rounded-lg border px-3 py-2', mine ? 'bg-primary/10' : 'bg-muted/40')}>
-                        <p className="text-xs font-medium text-muted-foreground">{message.sender_username}</p>
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {getUserDisplayName({
+                            display_name: message.sender_display_name,
+                            username: message.sender_username,
+                          })}
+                        </p>
                         {message.content.trim() ? (
                           <MarkdownContent
                             content={message.content}

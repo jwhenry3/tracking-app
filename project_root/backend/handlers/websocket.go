@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"fullstack-app/config"
@@ -33,9 +32,8 @@ var upgrader = websocket.Upgrader{
 
 func (h *WSHandler) Serve(c *gin.Context) {
 	token := c.Query("token")
-	workspaceID, err := strconv.Atoi(c.Query("workspace_id"))
-	if token == "" || err != nil || workspaceID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token and workspace_id are required"})
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
 		return
 	}
 
@@ -48,13 +46,9 @@ func (h *WSHandler) Serve(c *gin.Context) {
 		return
 	}
 
-	var memberRole string
-	err = h.DB.QueryRow(
-		`SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
-		workspaceID, claims.UserID,
-	).Scan(&memberRole)
+	workspaceIDs, err := loadUserWorkspaceIDs(h.DB, claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "workspace access denied"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load workspace memberships"})
 		return
 	}
 
@@ -65,11 +59,12 @@ func (h *WSHandler) Serve(c *gin.Context) {
 	}
 
 	client := &hub.Client{
-		Hub:         h.Hub,
-		Conn:        conn,
-		Send:        make(chan []byte, 256),
-		Username:    claims.Username,
-		WorkspaceID: workspaceID,
+		Hub:          h.Hub,
+		Conn:         conn,
+		Send:         make(chan []byte, 256),
+		UserID:       claims.UserID,
+		Username:     claims.Username,
+		WorkspaceIDs: hub.WorkspaceIDSet(workspaceIDs),
 	}
 
 	go client.WritePump()
@@ -77,10 +72,28 @@ func (h *WSHandler) Serve(c *gin.Context) {
 	h.Hub.Register(client)
 
 	welcome, _ := json.Marshal(hub.Message{
-		Type:        "connected",
-		WorkspaceID: workspaceID,
-		Username:    claims.Username,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Type:      "connected",
+		Username:  claims.Username,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 	client.Send <- welcome
+}
+
+func loadUserWorkspaceIDs(db *sql.DB, userID int) ([]int, error) {
+	rows, err := db.Query(`SELECT workspace_id FROM workspace_members WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var workspaceIDs []int
+	for rows.Next() {
+		var workspaceID int
+		if err := rows.Scan(&workspaceID); err != nil {
+			return nil, err
+		}
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+
+	return workspaceIDs, rows.Err()
 }

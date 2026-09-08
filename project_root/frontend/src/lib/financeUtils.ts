@@ -191,12 +191,20 @@ export function isDueSoon(date: string, referenceDate = todayIso()) {
   return dueDateUrgency(date, referenceDate) === 'due-soon'
 }
 
+export function isDueToday(date: string, referenceDate = todayIso()) {
+  return daysUntilDue(date, referenceDate) === 0
+}
+
 export function isPastDueBill(bill: Pick<Bill, 'due_date' | 'paid' | 'skipped'>, referenceDate = todayIso()) {
   return !bill.paid && !bill.skipped && isPastDue(bill.due_date, referenceDate)
 }
 
 export function isDueSoonBill(bill: Pick<Bill, 'due_date' | 'paid' | 'skipped'>, referenceDate = todayIso()) {
   return !bill.paid && !bill.skipped && isDueSoon(bill.due_date, referenceDate)
+}
+
+export function isDueTodayBill(bill: Pick<Bill, 'due_date' | 'paid' | 'skipped'>, referenceDate = todayIso()) {
+  return !bill.paid && !bill.skipped && isDueToday(bill.due_date, referenceDate)
 }
 
 export function isPastDueExpense(
@@ -211,6 +219,13 @@ export function isDueSoonExpense(
   referenceDate = todayIso(),
 ) {
   return !expense.paid && !expense.skipped && isDueSoon(expense.expense_date, referenceDate)
+}
+
+export function isDueTodayExpense(
+  expense: Pick<Expense, 'expense_date' | 'paid' | 'skipped'>,
+  referenceDate = todayIso(),
+) {
+  return !expense.paid && !expense.skipped && isDueToday(expense.expense_date, referenceDate)
 }
 
 export function timelineShowPastDueBadge(item: FinanceTimelineItem, referenceDate = todayIso()) {

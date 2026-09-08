@@ -4,6 +4,7 @@ import { CheckSquare, Plus, Trash2 } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import { FormField } from '@/components/forms/FormField'
+import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderIconButton } from '@/components/layout/PageHeader'
 import { InlineNoteEditor } from '@/components/notes/InlineNoteEditor'
@@ -12,12 +13,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { createTodo, createTodoList, deleteTodoList } from '@/lib/api'
+import { toLocalIsoDate } from '@/lib/calendarUtils'
+import { normalizeFinanceDate } from '@/lib/financeUtils'
 import { invalidateCheckLists } from '@/lib/queries/invalidate'
 import {
   useNotesQuery,
   useTodoListsQuery,
   useTodosQuery,
 } from '@/lib/queries/hooks'
+import { buildRecurrenceRule, describeRecurrence } from '@/lib/recurrence'
 import type { TodoList } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useWorkspacePermissions } from '@/lib/workspacePermissions'
@@ -26,7 +30,9 @@ import { useAuthStore } from '@/stores/authStore'
 type CheckListTab = 'item' | 'list'
 
 function formatListDate(date: string) {
-  return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+  const normalized = normalizeFinanceDate(date)
+  if (!normalized) return '—'
+  return new Date(`${normalized}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -36,7 +42,11 @@ function formatListDate(date: string) {
 
 function listSubtitle(list: TodoList) {
   if (list.kind === 'daily' && list.list_date) {
-    return formatListDate(list.list_date)
+    const dateLabel = formatListDate(list.list_date)
+    if (list.is_recurring && list.recurrence) {
+      return `${dateLabel} · ${describeRecurrence(list.recurrence, list.list_date)}`
+    }
+    return dateLabel
   }
   return 'General list'
 }
@@ -56,7 +66,7 @@ export function CheckListsView() {
   const workspaceNumericId = workspaceId ? Number(workspaceId) : null
   const queriesEnabled = Boolean(token && workspaceNumericId)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = toLocalIsoDate()
   const [activeListId, setActiveListId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<CheckListTab>('item')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -64,6 +74,8 @@ export function CheckListsView() {
   const [deleting, setDeleting] = useState(false)
   const [itemTitle, setItemTitle] = useState('')
   const [newListName, setNewListName] = useState('')
+  const [newListDate, setNewListDate] = useState(() => toLocalIsoDate())
+  const [newListRecurrence, setNewListRecurrence] = useState(defaultRecurrenceConfig)
   const [newNoteKey, setNewNoteKey] = useState(0)
 
   const listsQuery = useTodoListsQuery(workspaceNumericId, undefined, queriesEnabled)
@@ -102,6 +114,7 @@ export function CheckListsView() {
 
   function closeDialog() {
     setDialogOpen(false)
+    setNewListRecurrence(defaultRecurrenceConfig)
   }
 
   async function handleCreateItem(event: FormEvent) {
@@ -116,11 +129,27 @@ export function CheckListsView() {
   async function handleCreateList(event: FormEvent) {
     event.preventDefault()
     if (!token || !workspaceNumericId || !newListName.trim()) return
-    const list = await createTodoList(token, workspaceNumericId, {
+
+    const recurrenceRule = buildRecurrenceRule(newListRecurrence, newListDate)
+    const payload: { name: string; kind?: string; list_date?: string; recurrence?: string } = {
       name: newListName.trim(),
-      kind: 'general',
-    })
+    }
+
+    if (recurrenceRule) {
+      if (!newListDate) return
+      payload.list_date = newListDate
+      payload.recurrence = recurrenceRule
+    } else if (newListDate) {
+      payload.kind = 'daily'
+      payload.list_date = newListDate
+    } else {
+      payload.kind = 'general'
+    }
+
+    const list = await createTodoList(token, workspaceNumericId, payload)
     setNewListName('')
+    setNewListDate(toLocalIsoDate())
+    setNewListRecurrence(defaultRecurrenceConfig)
     setActiveListId(list.id)
     await refreshLists()
     closeDialog()
@@ -351,6 +380,22 @@ export function CheckListsView() {
         {activeTab === 'list' ? (
           <form className="space-y-4" onSubmit={(event) => void handleCreateList(event)}>
             <FormField label="List name" value={newListName} onChange={setNewListName} id="list-name" />
+            <FormField
+              label="Start date"
+              type="date"
+              value={newListDate}
+              onChange={setNewListDate}
+              id="list-start-date"
+            />
+            <RecurrencePicker
+              value={newListRecurrence}
+              anchorDate={newListDate}
+              onChange={setNewListRecurrence}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave repeat as &quot;Does not repeat&quot; for a one-time daily plan or a general list without a date.
+              Clear the start date for a general list with no schedule.
+            </p>
             <Button type="submit" className="w-full">Create list</Button>
           </form>
         ) : null}

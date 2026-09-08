@@ -12,6 +12,7 @@ import (
 const EntityEvent = "event"
 const EntityIncome = "income"
 const EntityBill = "bill"
+const EntityTodoList = "todo_list"
 
 const ActionCancelled = "cancelled"
 const ActionModified = "modified"

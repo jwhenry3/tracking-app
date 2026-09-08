@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { AuthBrandHeader } from '@/components/layout/AuthBrandHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -45,7 +46,8 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <AuthBrandHeader />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Choose a new password</CardTitle>

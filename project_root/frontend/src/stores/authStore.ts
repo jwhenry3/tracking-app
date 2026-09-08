@@ -9,9 +9,11 @@ import {
   register as registerRequest,
 } from '@/lib/api'
 import type { CreateWorkspaceResult, User, Workspace, WorkspaceFocusArea } from '@/lib/types'
+import { clearToastSession } from '@/lib/toast'
 
 type AuthState = {
   token: string | null
+  userId: number | null
   username: string | null
   email: string | null
   displayName: string | null
@@ -37,6 +39,7 @@ type AuthState = {
 
 function applyUserToState(user: User) {
   return {
+    userId: user.id,
     username: user.username,
     email: user.email ?? null,
     displayName: user.display_name,
@@ -48,6 +51,7 @@ function applyUserToState(user: User) {
 
 const emptyAuth = {
   token: null,
+  userId: null,
   username: null,
   email: null,
   displayName: null,
@@ -173,6 +177,7 @@ export const useAuthStore = create<AuthState>()(
       setActiveWorkspace: (workspaceId) => set({ activeWorkspaceId: workspaceId }),
 
       logout: () => {
+        clearToastSession()
         set({
           ...emptyAuth,
           error: null,

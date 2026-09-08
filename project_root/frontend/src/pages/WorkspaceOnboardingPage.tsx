@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { AuthBrandHeader } from '@/components/layout/AuthBrandHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -40,7 +41,7 @@ export function WorkspaceOnboardingPage() {
     try {
       const result = await createWorkspace(trimmed, message.trim() || undefined)
       if (result.status === 'created' || result.status === 'already_member') {
-        navigate(`/w/${result.workspace.id}/calendar`)
+        navigate('/calendar')
       } else {
         setFeedback(`Access request sent to members of ${result.workspace.name}.`)
       }
@@ -58,7 +59,7 @@ export function WorkspaceOnboardingPage() {
     try {
       const result = await acceptInvite(token, inviteId)
       await loadWorkspaces()
-      navigate(`/w/${result.workspace.id}/calendar`)
+      navigate('/calendar')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not accept invite')
     } finally {
@@ -81,7 +82,8 @@ export function WorkspaceOnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <AuthBrandHeader />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Join or create a workspace</CardTitle>

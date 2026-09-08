@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import App from './App.tsx'
 import { ThemeProvider } from './components/layout/ThemeProvider'
+import { ToastProvider } from './components/layout/ToastProvider'
 import './index.css'
 import { queryClient } from './lib/queryClient'
 import { useAuthStore } from './stores/authStore'
@@ -20,6 +21,7 @@ function Bootstrap() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <App />
+        <ToastProvider />
       </ThemeProvider>
     </QueryClientProvider>
   )

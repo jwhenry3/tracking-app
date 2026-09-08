@@ -190,6 +190,7 @@ type reviewAccessRequest struct {
 type memberResponse struct {
 	UserID      int      `json:"user_id"`
 	Username    string   `json:"username"`
+	DisplayName string   `json:"display_name"`
 	Role        string   `json:"role"`
 	ManageAreas []string `json:"manage_areas"`
 	JoinedAt    string   `json:"joined_at"`
@@ -448,7 +449,7 @@ func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 	focusAreas := parseFocusAreas(focusRaw)
 
 	rows, err := h.DB.Query(`
-		SELECT u.id, u.username, wm.role, wm.manage_areas, wm.joined_at
+		SELECT u.id, u.username, u.display_name, wm.role, wm.manage_areas, wm.joined_at
 		FROM workspace_members wm
 		INNER JOIN users u ON u.id = wm.user_id
 		WHERE wm.workspace_id = ?
@@ -462,12 +463,14 @@ func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 	members := []memberResponse{}
 	for rows.Next() {
 		var member memberResponse
+		var displayName sql.NullString
 		var manageRaw sql.NullString
 		var joinedAt sql.NullTime
-		if err := rows.Scan(&member.UserID, &member.Username, &member.Role, &manageRaw, &joinedAt); err != nil {
+		if err := rows.Scan(&member.UserID, &member.Username, &displayName, &member.Role, &manageRaw, &joinedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read member"})
 			return
 		}
+		member.DisplayName = userDisplayName(displayName, member.Username)
 		member.ManageAreas = effectiveManageAreas(member.Role, parseManageAreas(manageRaw), focusAreas)
 		if joinedAt.Valid {
 			member.JoinedAt = joinedAt.Time.UTC().Format("2006-01-02T15:04:05Z")

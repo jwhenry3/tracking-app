@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"fullstack-app/branding"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -94,12 +96,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	origin := strings.TrimRight(h.Cfg.AppOrigin, "/")
 	resetURL := origin + "/reset-password?token=" + token
 	body := "Hi " + username + ",\n\n" +
-		"Someone requested a password reset for your Home Planner account.\n" +
+		"Someone requested a password reset for your " + branding.AppName + " account.\n" +
 		"Open this link to choose a new password (it expires in 1 hour):\n\n" +
 		resetURL + "\n\n" +
 		"If you did not request this, you can ignore this email.\n"
 
-	if err := h.sendMail(email, "Reset your Home Planner password", body); err != nil {
+	if err := h.sendMail(email, "Reset your "+branding.AppName+" password", body); err != nil {
 		log.Printf("forgot-password send failed: %v", err)
 	}
 

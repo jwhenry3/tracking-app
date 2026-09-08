@@ -21,12 +21,17 @@ type Message struct {
 }
 
 type Client struct {
-	Hub         *Hub
-	Conn        *websocket.Conn
-	Send        chan []byte
-	Username    string
-	WorkspaceID int
-	replaced    bool
+	Hub          *Hub
+	Conn         *websocket.Conn
+	Send         chan []byte
+	UserID       int
+	Username     string
+	WorkspaceIDs map[int]bool
+	replaced     bool
+}
+
+func (c *Client) HasWorkspace(workspaceID int) bool {
+	return c.WorkspaceIDs[workspaceID]
 }
 
 type Hub struct {
@@ -49,6 +54,16 @@ func New() *Hub {
 		register:   make(chan *Client, 256),
 		unregister: make(chan *Client, 256),
 	}
+}
+
+func WorkspaceIDSet(ids []int) map[int]bool {
+	set := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			set[id] = true
+		}
+	}
+	return set
 }
 
 func (h *Hub) Register(client *Client) {
@@ -75,7 +90,7 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			for existing := range h.clients {
-				if existing.Username != client.Username || existing.WorkspaceID != client.WorkspaceID {
+				if existing.UserID != client.UserID {
 					continue
 				}
 				existing.replaced = true
@@ -99,7 +114,7 @@ func (h *Hub) Run() {
 			h.mu.RLock()
 			var stale []*Client
 			for client := range h.clients {
-				if client.WorkspaceID != message.WorkspaceID {
+				if !client.HasWorkspace(message.WorkspaceID) {
 					continue
 				}
 				select {

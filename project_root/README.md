@@ -1,4 +1,6 @@
-# Home Planner
+# Synchrosity
+
+**Align Your Home, Align Your Life**
 
 Shared workspace app for families and groups to track finances, calendar events, todos, notes, and daily planning together.
 

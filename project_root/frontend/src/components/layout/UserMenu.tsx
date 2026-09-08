@@ -51,7 +51,10 @@ export function UserMenu({ connected, onOpenSettings, onLogout, variant = 'rail'
   const isHeader = variant === 'header'
 
   return (
-    <div ref={menuRef} className={cn('relative flex', isHeader ? 'justify-end' : 'justify-center')}>
+    <div
+      ref={menuRef}
+      className={cn('relative w-full', isHeader ? 'flex justify-start' : 'flex justify-center')}
+    >
       <button
         type="button"
         aria-expanded={open}
@@ -59,7 +62,7 @@ export function UserMenu({ connected, onOpenSettings, onLogout, variant = 'rail'
         title={resolvedDisplayName}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-sm transition',
+          'flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl text-sm transition',
           isHeader ? 'bg-muted hover:bg-muted/80' : 'bg-white/10 hover:bg-white/20',
         )}
       >
@@ -75,10 +78,7 @@ export function UserMenu({ connected, onOpenSettings, onLogout, variant = 'rail'
       {open ? (
         <div
           role="menu"
-          className={cn(
-            'absolute z-50 w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg',
-            isHeader ? 'right-0 top-full mt-2' : 'left-full top-0 ml-2',
-          )}
+          className="absolute bottom-full left-0 z-50 mb-2 w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-[#25282d] text-white shadow-lg"
         >
           <div className="border-b border-white/10 px-3 py-2">
             <p className="truncate text-sm font-medium">{resolvedDisplayName}</p>

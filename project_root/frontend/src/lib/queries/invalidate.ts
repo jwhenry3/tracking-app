@@ -41,6 +41,15 @@ export function invalidateWorkspaceEntity(
       return queryClient.invalidateQueries({ queryKey: ['chat-conversations', workspaceId] })
     case 'workspace':
       return queryClient.invalidateQueries({ queryKey: queryKeys.workspaces() })
+    case 'user_profile':
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.workspaceMembers(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations(workspaceId) }),
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === 'chat-messages' && query.queryKey[1] === workspaceId,
+        }),
+      ])
     default:
       return queryClient.invalidateQueries({
         predicate: (query) => {

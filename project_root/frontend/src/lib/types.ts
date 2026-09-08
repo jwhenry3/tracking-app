@@ -27,6 +27,7 @@ export type CreateWorkspaceResult = {
 export type WorkspaceMember = {
   user_id: number
   username: string
+  display_name: string
   role: string
   manage_areas: WorkspaceFocusArea[]
   joined_at: string
@@ -52,12 +53,17 @@ export type WorkspaceInvite = {
   created_at: string
 }
 
+export type ChatConversationMember = {
+  username: string
+  display_name: string
+}
+
 export type ChatConversation = {
   id: number
   workspace_id: number
   kind: 'group' | 'direct'
   title: string
-  members?: string[]
+  members?: ChatConversationMember[]
 }
 
 export type ChatAttachment = {
@@ -73,6 +79,7 @@ export type ChatMessage = {
   conversation_id: number
   sender_id: number
   sender_username: string
+  sender_display_name: string
   content: string
   created_at: string
   attachments?: ChatAttachment[]
@@ -202,8 +209,11 @@ export type TodoList = {
   id: number
   workspace_id: number
   name: string
-  kind: 'daily' | 'general'
+  kind: 'daily' | 'general' | 'series'
   list_date?: string | null
+  recurrence?: string
+  is_recurring?: boolean
+  series_id?: number | null
 }
 
 export type Todo = {

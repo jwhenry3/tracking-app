@@ -95,8 +95,11 @@ var migrationStatements = []string{
 		name VARCHAR(255) NOT NULL,
 		kind VARCHAR(50) NOT NULL DEFAULT 'general',
 		list_date DATE NULL,
+		recurrence TEXT NULL,
+		series_id INT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+		CONSTRAINT fk_todo_lists_series FOREIGN KEY (series_id) REFERENCES todo_lists(id) ON DELETE CASCADE
 	)`,
 	`CREATE TABLE IF NOT EXISTS todos (
 		id INT AUTO_INCREMENT PRIMARY KEY,
@@ -245,6 +248,9 @@ var alterStatements = []string{
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	)`,
 	`CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens (user_id)`,
+	`ALTER TABLE todo_lists ADD COLUMN recurrence TEXT NULL`,
+	`ALTER TABLE todo_lists ADD COLUMN series_id INT NULL`,
+	`ALTER TABLE todo_lists ADD CONSTRAINT fk_todo_lists_series FOREIGN KEY (series_id) REFERENCES todo_lists(id) ON DELETE CASCADE`,
 }
 
 func Migrate(db *sql.DB) error {
@@ -271,5 +277,6 @@ func isIgnorableAlterError(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "duplicate column") ||
 		strings.Contains(message, "check that column/key exists") ||
-		strings.Contains(message, "duplicate key name")
+		strings.Contains(message, "duplicate key name") ||
+		strings.Contains(message, "duplicate foreign key constraint name")
 }
