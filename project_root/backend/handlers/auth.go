@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -14,7 +13,6 @@ import (
 	"fullstack-app/middleware"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -28,6 +26,7 @@ type AuthHandler struct {
 type registerRequest struct {
 	Username      string `json:"username" binding:"required,min=3,max=50"`
 	Password      string `json:"password" binding:"required,min=6"`
+	Email         string `json:"email"`
 	WorkspaceName string `json:"workspace_name"`
 }
 
@@ -54,6 +53,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
@@ -67,14 +72,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
+	var emailValue any
+	if email != "" {
+		emailValue = email
+	}
+
 	result, err := tx.Exec(
-		"INSERT INTO users (username, password) VALUES (?, ?)",
-		req.Username, string(hash),
+		"INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
+		req.Username, string(hash), emailValue,
 	)
 	if err != nil {
-		var mysqlErr *mysql.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-			c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
+		if message := duplicateConstraintError(err); message != "" {
+			c.JSON(http.StatusConflict, gin.H{"error": message})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register user"})
@@ -85,41 +94,39 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	userID := int(userID64)
 
 	workspaceName := strings.TrimSpace(req.WorkspaceName)
-	if workspaceName == "" {
-		workspaceName = fmt.Sprintf("%s's Home", req.Username)
-	}
-
-	slugBase := slugify(workspaceName)
-	slug := slugBase
-	for i := 1; i < 100; i++ {
-		_, err = tx.Exec(
-			"INSERT INTO workspaces (name, slug, created_by) VALUES (?, ?, ?)",
-			workspaceName, slug, userID,
-		)
-		if err == nil {
-			break
-		}
-		slug = fmt.Sprintf("%s-%d", slugBase, i+1)
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create workspace"})
-		return
-	}
-
 	var workspaceID int
-	err = tx.QueryRow("SELECT id FROM workspaces WHERE slug = ?", slug).Scan(&workspaceID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load workspace"})
-		return
-	}
+	if workspaceName != "" {
+		slugBase := slugify(workspaceName)
+		slug := slugBase
+		for i := 1; i < 100; i++ {
+			_, err = tx.Exec(
+				"INSERT INTO workspaces (name, slug, created_by) VALUES (?, ?, ?)",
+				workspaceName, slug, userID,
+			)
+			if err == nil {
+				break
+			}
+			slug = fmt.Sprintf("%s-%d", slugBase, i+1)
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create workspace"})
+			return
+		}
 
-	_, err = tx.Exec(
-		"INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'owner')",
-		workspaceID, userID,
-	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add workspace member"})
-		return
+		err = tx.QueryRow("SELECT id FROM workspaces WHERE slug = ?", slug).Scan(&workspaceID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load workspace"})
+			return
+		}
+
+		_, err = tx.Exec(
+			"INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'owner')",
+			workspaceID, userID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add workspace member"})
+			return
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -127,7 +134,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	_ = EnsureWorkspaceGroupConversation(h.DB, workspaceID)
+	if workspaceID > 0 {
+		_ = EnsureWorkspaceGroupConversation(h.DB, workspaceID)
+	}
 
 	token, err := h.signToken(userID, req.Username)
 	if err != nil {
@@ -148,12 +157,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	identifier := strings.TrimSpace(req.Username)
+	email := optionalEmail(identifier)
+
 	var userID int
 	var username, passwordHash string
 	err := h.DB.QueryRow(
 		"SELECT id, username, password FROM users WHERE username = ?",
-		req.Username,
+		identifier,
 	).Scan(&userID, &username, &passwordHash)
+	if err == sql.ErrNoRows && email != "" {
+		err = h.DB.QueryRow(
+			"SELECT id, username, password FROM users WHERE email = ?",
+			email,
+		).Scan(&userID, &username, &passwordHash)
+	}
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
@@ -177,12 +195,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	username, _ := c.Get("username")
-	c.JSON(http.StatusOK, gin.H{
-		"id":       userID,
-		"username": username,
-	})
+	userID, ok := c.Get("userID")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	response, err := h.loadUserResponse(userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *AuthHandler) signToken(userID int, username string) (string, error) {

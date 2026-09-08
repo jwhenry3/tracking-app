@@ -4,7 +4,7 @@ export const WORKSPACE_FOCUS_OPTIONS = [
   {
     id: 'planning' as const,
     label: 'Planning',
-    description: 'Daily, weekly, and monthly planners plus todos and notes.',
+    description: 'Daily and weekly planners plus check lists and notes.',
   },
   {
     id: 'finances' as const,
@@ -40,13 +40,31 @@ export function isWorkspaceRouteAllowed(
   const relativePath = pathname.slice(basePath.length)
 
   if (
-    (relativePath === 'todos' || relativePath.startsWith('todos/') || relativePath.startsWith('planner/')) &&
+    (relativePath === 'check-lists' ||
+      relativePath.startsWith('check-lists/') ||
+      relativePath === 'todos' ||
+      relativePath.startsWith('todos/') ||
+      relativePath.startsWith('planner/')) &&
     !workspaceHasFocus(workspace, 'planning')
   ) {
     return false
   }
 
   if (relativePath.startsWith('finances') && !workspaceHasFocus(workspace, 'finances')) {
+    return false
+  }
+
+  if (
+    (relativePath === 'manage/bills' ||
+      relativePath.startsWith('manage/bills/') ||
+      relativePath === 'manage/expenses' ||
+      relativePath.startsWith('manage/expenses/') ||
+      relativePath === 'finances/manage/bills' ||
+      relativePath.startsWith('finances/manage/bills/') ||
+      relativePath === 'finances/manage/expenses' ||
+      relativePath.startsWith('finances/manage/expenses/')) &&
+    !workspaceHasFocus(workspace, 'finances')
+  ) {
     return false
   }
 

@@ -4,8 +4,17 @@ import { useNavigate } from 'react-router-dom'
 
 import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
 import { WorkspaceSettings } from '@/components/workspace/WorkspaceSettings'
+import {
+  ManageTable,
+  ManageTableBody,
+  ManageTableHead,
+  ManageTableRow,
+  ManageTableTd,
+  ManageTableTh,
+} from '@/components/manage/ManageTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   acceptInvite,
@@ -14,9 +23,12 @@ import {
   fetchWorkspaceAccessRequests,
   fetchWorkspaceMembers,
   inviteWorkspaceMember,
+  leaveWorkspace,
   reviewWorkspaceAccessRequest,
+  updateWorkspaceMember,
 } from '@/lib/api'
-import type { Workspace, WorkspaceAccessRequest, WorkspaceInvite, WorkspaceMember } from '@/lib/types'
+import type { Workspace, WorkspaceAccessRequest, WorkspaceFocusArea, WorkspaceInvite, WorkspaceMember } from '@/lib/types'
+import { WORKSPACE_FOCUS_OPTIONS, workspaceHasFocus } from '@/lib/workspaceFocus'
 import { useAuthStore } from '@/stores/authStore'
 import { useRealtimeStore } from '@/stores/realtimeStore'
 
@@ -40,13 +52,18 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
   const [feedback, setFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'members' | 'settings'>('members')
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const canManageSettings = workspace?.role === 'owner'
+  const canLeave = workspace?.role !== 'owner'
 
   async function loadPanelData() {
     if (!token || !workspace) return
     const [memberData, requestData, inviteData] = await Promise.all([
       fetchWorkspaceMembers(token, workspace.id),
-      fetchWorkspaceAccessRequests(token, workspace.id),
+      workspace.role === 'owner'
+        ? fetchWorkspaceAccessRequests(token, workspace.id)
+        : Promise.resolve({ requests: [] as WorkspaceAccessRequest[] }),
       fetchMyInvites(token),
     ])
     setMembers(memberData.members)
@@ -91,6 +108,25 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
     }
   }
 
+  async function handleToggleManage(member: WorkspaceMember, area: WorkspaceFocusArea) {
+    if (!token || !workspace) return
+    const current = member.manage_areas ?? []
+    const next = current.includes(area)
+      ? current.filter((value) => value !== area)
+      : [...current, area]
+    setLoading(true)
+    setFeedback(null)
+    try {
+      await updateWorkspaceMember(token, workspace.id, member.user_id, next)
+      await loadPanelData()
+      await loadWorkspaces()
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Could not update member permissions')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleReview(requestId: number, action: 'approve' | 'deny') {
     if (!token || !workspace) return
     await reviewWorkspaceAccessRequest(token, workspace.id, requestId, action)
@@ -114,9 +150,39 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
     await loadPanelData()
   }
 
+  async function handleLeave() {
+    if (!token || !workspace) return
+    setLeaving(true)
+    setFeedback(null)
+    try {
+      await leaveWorkspace(token, workspace.id)
+      await loadWorkspaces()
+      setLeaveOpen(false)
+      onOpenChange(false)
+      const remaining = useAuthStore.getState().workspaces
+      const next = remaining[0]
+      navigate(next ? `/w/${next.id}/calendar` : '/')
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Could not leave workspace')
+    } finally {
+      setLeaving(false)
+    }
+  }
+
+  function handleWorkspaceRemoved() {
+    onOpenChange(false)
+    const remaining = useAuthStore.getState().workspaces
+    const next = remaining[0]
+    navigate(next ? `/w/${next.id}/calendar` : '/')
+  }
+
   if (!workspace) {
     return null
   }
+
+  const grantableAreas = WORKSPACE_FOCUS_OPTIONS.filter((option) =>
+    workspaceHasFocus(workspace, option.id),
+  )
 
   return (
     <OperationDialog
@@ -134,7 +200,9 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
         onChange={(tabId) => setActiveTab(tabId as 'members' | 'settings')}
       />
 
-      {activeTab === 'settings' && canManageSettings ? <WorkspaceSettings workspace={workspace} /> : null}
+      {activeTab === 'settings' && canManageSettings ? (
+        <WorkspaceSettings workspace={workspace} onWorkspaceRemoved={handleWorkspaceRemoved} />
+      ) : null}
 
       {activeTab === 'members' ? (
       <div className="space-y-6">
@@ -154,19 +222,59 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
               Open chat
             </Button>
           </div>
-          <div className="space-y-2">
-            {members.map((member) => (
-              <div key={member.user_id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{member.username}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
-                </div>
-                {member.username === username ? <Badge className="bg-secondary text-secondary-foreground">You</Badge> : null}
-              </div>
-            ))}
-          </div>
+          <ManageTable tableClassName="min-w-[480px]">
+            <ManageTableHead>
+              <ManageTableTh>Member</ManageTableTh>
+              <ManageTableTh>Role</ManageTableTh>
+              {grantableAreas.map((area) => (
+                <ManageTableTh key={area.id} className="text-center">
+                  Manage {area.label.toLowerCase()}
+                </ManageTableTh>
+              ))}
+            </ManageTableHead>
+            <ManageTableBody>
+              {members.map((member) => {
+                const granted = member.manage_areas ?? []
+
+                return (
+                  <ManageTableRow key={member.user_id}>
+                    <ManageTableTd className="font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        {member.username}
+                        {member.username === username ? (
+                          <Badge className="bg-secondary text-secondary-foreground">You</Badge>
+                        ) : null}
+                      </span>
+                    </ManageTableTd>
+                    <ManageTableTd className="capitalize text-muted-foreground">{member.role}</ManageTableTd>
+                    {grantableAreas.map((area) => (
+                      <ManageTableTd key={area.id} className="text-center">
+                        {member.role === 'owner' ? (
+                          <span className="text-xs text-muted-foreground">All</span>
+                        ) : canManageSettings ? (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={granted.includes(area.id)}
+                            disabled={loading}
+                            aria-label={`Allow ${member.username} to manage ${area.label.toLowerCase()}`}
+                            onChange={() => void handleToggleManage(member, area.id)}
+                          />
+                        ) : granted.includes(area.id) ? (
+                          <span className="text-xs text-muted-foreground">Yes</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </ManageTableTd>
+                    ))}
+                  </ManageTableRow>
+                )
+              })}
+            </ManageTableBody>
+          </ManageTable>
         </section>
 
+        {canManageSettings ? (
         <section>
           <h3 className="mb-3 text-sm font-semibold">Invite member</h3>
           <form className="flex gap-2" onSubmit={(event) => void handleInvite(event)}>
@@ -182,8 +290,9 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
             </Button>
           </form>
         </section>
+        ) : null}
 
-        {requests.length > 0 ? (
+        {canManageSettings && requests.length > 0 ? (
           <section>
             <h3 className="mb-3 text-sm font-semibold">Access requests</h3>
             <div className="space-y-2">
@@ -230,8 +339,45 @@ export function WorkspacePanel({ open, onOpenChange, workspace }: WorkspacePanel
         ) : null}
 
         {feedback ? <p className="text-sm text-muted-foreground">{feedback}</p> : null}
+
+        {canLeave ? (
+          <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+            <h3 className="text-sm font-semibold text-destructive">Leave workspace</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Remove {workspace.name} from your workspace list. You can request access again later if needed.
+            </p>
+            <Button
+              type="button"
+              variant="destructive"
+              className="mt-4"
+              onClick={() => setLeaveOpen(true)}
+            >
+              Leave workspace
+            </Button>
+          </section>
+        ) : null}
       </div>
       ) : null}
+
+      <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+        <DialogContent className="max-w-md">
+          <div className="p-6">
+            <h2 className="text-lg font-semibold">Leave {workspace.name}?</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              You will lose access to this workspace&apos;s calendar, finances, chat, and other data.
+              Other members will not be affected.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setLeaveOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" disabled={leaving} onClick={() => void handleLeave()}>
+                {leaving ? 'Leaving…' : 'Leave workspace'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </OperationDialog>
   )
 }

@@ -1,0 +1,5 @@
+# Backend
+tmp/
+uploads/
+.env
+*.exe

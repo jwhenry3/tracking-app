@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { FormField } from '@/components/forms/FormField'
 import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/RecurrencePicker'
 import { OpsTabs } from '@/components/layout/OperationDialog'
+import { entryTypeMeta } from '@/components/ops/EntryTypeIcon'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,6 +14,7 @@ import {
   createIncome,
 } from '@/lib/api'
 import { buildRecurrenceRule } from '@/lib/recurrence'
+import { useWorkspacePermissions } from '@/lib/workspacePermissions'
 
 export type AddDayEntryTab = 'event' | 'income' | 'bill' | 'expense'
 
@@ -31,7 +33,17 @@ export function AddDayEntryForm({
   defaultTab = 'event',
   onCreated,
 }: AddDayEntryFormProps) {
-  const [formTab, setFormTab] = useState<AddDayEntryTab>(defaultTab)
+  const { canManagePlanning, canManageFinances } = useWorkspacePermissions()
+  const allowedTabs = (
+    [
+      canManagePlanning ? 'event' : null,
+      canManageFinances ? 'income' : null,
+      canManageFinances ? 'bill' : null,
+      canManageFinances ? 'expense' : null,
+    ] as Array<AddDayEntryTab | null>
+  ).filter((tab): tab is AddDayEntryTab => tab !== null)
+  const initialTab = allowedTabs.includes(defaultTab) ? defaultTab : allowedTabs[0] ?? defaultTab
+  const [formTab, setFormTab] = useState<AddDayEntryTab>(initialTab)
 
   const [eventForm, setEventForm] = useState({
     title: '',
@@ -60,12 +72,12 @@ export function AddDayEntryForm({
   })
 
   useEffect(() => {
-    setFormTab(defaultTab)
+    setFormTab(allowedTabs.includes(defaultTab) ? defaultTab : allowedTabs[0] ?? defaultTab)
     setEventForm((state) => ({ ...state, date: defaultDate }))
     setIncomeForm((state) => ({ ...state, date: defaultDate }))
     setBillForm((state) => ({ ...state, date: defaultDate }))
     setExpenseForm((state) => ({ ...state, date: defaultDate }))
-  }, [defaultDate, defaultTab])
+  }, [defaultDate, defaultTab, canManagePlanning, canManageFinances])
 
   async function submitEvent(event: FormEvent) {
     event.preventDefault()
@@ -141,10 +153,16 @@ export function AddDayEntryForm({
     <>
       <OpsTabs
         tabs={[
-          { id: 'event', label: 'Other' },
-          { id: 'income', label: 'Income' },
-          { id: 'bill', label: 'Bill' },
-          { id: 'expense', label: 'Expense' },
+          ...(canManagePlanning
+            ? [{ id: 'event' as const, label: 'Event', icon: entryTypeMeta.event.icon }]
+            : []),
+          ...(canManageFinances
+            ? [
+                { id: 'income' as const, label: 'Income', icon: entryTypeMeta.income.icon },
+                { id: 'bill' as const, label: 'Bill', icon: entryTypeMeta.bill.icon },
+                { id: 'expense' as const, label: 'Expense', icon: entryTypeMeta.expense.icon },
+              ]
+            : []),
         ]}
         activeTab={formTab}
         onChange={(tabId) => setFormTab(tabId as AddDayEntryTab)}

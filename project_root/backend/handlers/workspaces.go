@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"fullstack-app/hub"
+	"fullstack-app/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,11 +21,12 @@ type WorkspaceHandler struct {
 }
 
 type workspaceResponse struct {
-	ID         int      `json:"id"`
-	Name       string   `json:"name"`
-	Slug       string   `json:"slug"`
-	Role       string   `json:"role"`
-	FocusAreas []string `json:"focus_areas"`
+	ID          int      `json:"id"`
+	Name        string   `json:"name"`
+	Slug        string   `json:"slug"`
+	Role        string   `json:"role"`
+	FocusAreas  []string `json:"focus_areas"`
+	ManageAreas []string `json:"manage_areas"`
 }
 
 type createWorkspaceRequest struct {
@@ -34,6 +36,7 @@ type createWorkspaceRequest struct {
 }
 
 type updateWorkspaceSettingsRequest struct {
+	Name       string   `json:"name" binding:"required,min=2,max=100"`
 	FocusAreas []string `json:"focus_areas"`
 }
 
@@ -90,7 +93,39 @@ func focusAreasJSON(areas []string) (string, error) {
 	return string(raw), nil
 }
 
-func (h *WorkspaceHandler) loadWorkspaceResponse(workspaceID int, role string) (workspaceResponse, error) {
+type updateMemberRequest struct {
+	ManageAreas []string `json:"manage_areas"`
+}
+
+func parseManageAreas(raw sql.NullString) []string {
+	return middleware.ParseManageAreas(raw)
+}
+
+func intersectManageAreas(stored, focus []string) []string {
+	allowed := map[string]bool{}
+	for _, area := range focus {
+		allowed[area] = true
+	}
+	next := make([]string, 0, len(stored))
+	seen := map[string]bool{}
+	for _, area := range stored {
+		if !allowed[area] || seen[area] {
+			continue
+		}
+		seen[area] = true
+		next = append(next, area)
+	}
+	return next
+}
+
+func effectiveManageAreas(role string, stored, focus []string) []string {
+	if role == middleware.RoleOwner {
+		return append([]string(nil), focus...)
+	}
+	return intersectManageAreas(stored, focus)
+}
+
+func (h *WorkspaceHandler) loadWorkspaceResponse(workspaceID int, role string, storedManage []string) (workspaceResponse, error) {
 	var ws workspaceResponse
 	var focusRaw sql.NullString
 	err := h.DB.QueryRow(
@@ -102,7 +137,42 @@ func (h *WorkspaceHandler) loadWorkspaceResponse(workspaceID int, role string) (
 	}
 	ws.Role = role
 	ws.FocusAreas = parseFocusAreas(focusRaw)
+	ws.ManageAreas = effectiveManageAreas(role, storedManage, ws.FocusAreas)
 	return ws, nil
+}
+
+func (h *WorkspaceHandler) pruneMemberManageAreas(workspaceID int, focusAreas []string) error {
+	rows, err := h.DB.Query(
+		`SELECT user_id, manage_areas FROM workspace_members WHERE workspace_id = ? AND role = 'member'`,
+		workspaceID,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int
+		var manageRaw sql.NullString
+		if err := rows.Scan(&userID, &manageRaw); err != nil {
+			return err
+		}
+
+		pruned := intersectManageAreas(parseManageAreas(manageRaw), focusAreas)
+		value, err := json.Marshal(pruned)
+		if err != nil {
+			return err
+		}
+
+		if _, err := h.DB.Exec(
+			`UPDATE workspace_members SET manage_areas = ? WHERE workspace_id = ? AND user_id = ?`,
+			string(value), workspaceID, userID,
+		); err != nil {
+			return err
+		}
+	}
+
+	return rows.Err()
 }
 
 type addMemberRequest struct {
@@ -118,21 +188,22 @@ type reviewAccessRequest struct {
 }
 
 type memberResponse struct {
-	UserID   int    `json:"user_id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	JoinedAt string `json:"joined_at"`
+	UserID      int      `json:"user_id"`
+	Username    string   `json:"username"`
+	Role        string   `json:"role"`
+	ManageAreas []string `json:"manage_areas"`
+	JoinedAt    string   `json:"joined_at"`
 }
 
 type accessRequestResponse struct {
-	ID              int    `json:"id"`
-	WorkspaceID     int    `json:"workspace_id"`
-	WorkspaceName   string `json:"workspace_name"`
-	UserID          int    `json:"user_id"`
-	Username        string `json:"username"`
-	Message         string `json:"message"`
-	Status          string `json:"status"`
-	CreatedAt       string `json:"created_at"`
+	ID            int    `json:"id"`
+	WorkspaceID   int    `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	UserID        int    `json:"user_id"`
+	Username      string `json:"username"`
+	Message       string `json:"message"`
+	Status        string `json:"status"`
+	CreatedAt     string `json:"created_at"`
 }
 
 type inviteResponse struct {
@@ -148,10 +219,10 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
 
 	rows, err := h.DB.Query(`
-		SELECT w.id, w.name, w.slug, wm.role, w.focus_areas
+		SELECT w.id, w.name, w.slug, wm.role, w.focus_areas, wm.manage_areas
 		FROM workspaces w
 		INNER JOIN workspace_members wm ON wm.workspace_id = w.id
-		WHERE wm.user_id = ?
+		WHERE wm.user_id = ? AND w.archived_at IS NULL
 		ORDER BY w.name ASC`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load workspaces"})
@@ -163,11 +234,13 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 	for rows.Next() {
 		var ws workspaceResponse
 		var focusRaw sql.NullString
-		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role, &focusRaw); err != nil {
+		var manageRaw sql.NullString
+		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role, &focusRaw, &manageRaw); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read workspace"})
 			return
 		}
 		ws.FocusAreas = parseFocusAreas(focusRaw)
+		ws.ManageAreas = effectiveManageAreas(ws.Role, parseManageAreas(manageRaw), ws.FocusAreas)
 		workspaces = append(workspaces, ws)
 	}
 
@@ -188,18 +261,19 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	var existingID int
 	var existingName, existingSlug string
 	err := h.DB.QueryRow(
-		`SELECT id, name, slug FROM workspaces WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1`,
+		`SELECT id, name, slug FROM workspaces WHERE (slug = ? OR LOWER(name) = LOWER(?)) AND archived_at IS NULL LIMIT 1`,
 		slugBase, strings.TrimSpace(req.Name),
 	).Scan(&existingID, &existingName, &existingSlug)
 
 	if err == nil {
 		var memberRole string
+		var manageRaw sql.NullString
 		memberErr := h.DB.QueryRow(
-			`SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
+			`SELECT role, manage_areas FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
 			existingID, userID,
-		).Scan(&memberRole)
+		).Scan(&memberRole, &manageRaw)
 		if memberErr == nil {
-			ws, wsErr := h.loadWorkspaceResponse(existingID, memberRole)
+			ws, wsErr := h.loadWorkspaceResponse(existingID, memberRole, parseManageAreas(manageRaw))
 			if wsErr != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load workspace"})
 				return
@@ -230,7 +304,7 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{
 			"status": "access_requested",
 			"workspace": workspaceResponse{
-				ID: existingID, Name: existingName, Slug: existingSlug, FocusAreas: defaultFocusAreas,
+				ID: existingID, Name: existingName, Slug: existingSlug, FocusAreas: defaultFocusAreas, ManageAreas: []string{},
 			},
 		})
 		return
@@ -289,7 +363,7 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"status": "created",
 		"workspace": workspaceResponse{
-			ID: workspaceID, Name: req.Name, Slug: slug, Role: "owner", FocusAreas: focusAreas,
+			ID: workspaceID, Name: req.Name, Slug: slug, Role: "owner", FocusAreas: focusAreas, ManageAreas: focusAreas,
 		},
 	})
 }
@@ -298,7 +372,7 @@ func (h *WorkspaceHandler) Get(c *gin.Context) {
 	workspaceID, _ := c.Get("workspaceID")
 	role, _ := c.Get("workspaceRole")
 
-	ws, err := h.loadWorkspaceResponse(workspaceID.(int), role.(string))
+	ws, err := h.loadWorkspaceResponse(workspaceID.(int), role.(string), middleware.ManageAreas(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
 		return
@@ -311,8 +385,7 @@ func (h *WorkspaceHandler) UpdateSettings(c *gin.Context) {
 	workspaceID, _ := c.Get("workspaceID")
 	role, _ := c.Get("workspaceRole")
 
-	if role.(string) != "owner" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only workspace owners can change settings"})
+	if !middleware.RequireOwner(c) {
 		return
 	}
 
@@ -329,13 +402,28 @@ func (h *WorkspaceHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	_, err = h.DB.Exec(`UPDATE workspaces SET focus_areas = ? WHERE id = ?`, focusAreasValue, workspaceID)
+	trimmedName := strings.TrimSpace(req.Name)
+	slug, err := uniqueWorkspaceSlug(h.DB, trimmedName, workspaceID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update workspace name"})
+		return
+	}
+
+	_, err = h.DB.Exec(
+		`UPDATE workspaces SET name = ?, slug = ?, focus_areas = ? WHERE id = ?`,
+		trimmedName, slug, focusAreasValue, workspaceID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update workspace settings"})
 		return
 	}
 
-	ws, err := h.loadWorkspaceResponse(workspaceID.(int), role.(string))
+	if err := h.pruneMemberManageAreas(workspaceID.(int), focusAreas); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update workspace settings"})
+		return
+	}
+
+	ws, err := h.loadWorkspaceResponse(workspaceID.(int), role.(string), middleware.ManageAreas(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load workspace"})
 		return
@@ -352,8 +440,15 @@ func (h *WorkspaceHandler) UpdateSettings(c *gin.Context) {
 func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 	workspaceID, _ := c.Get("workspaceID")
 
+	var focusRaw sql.NullString
+	if err := h.DB.QueryRow(`SELECT focus_areas FROM workspaces WHERE id = ?`, workspaceID).Scan(&focusRaw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load members"})
+		return
+	}
+	focusAreas := parseFocusAreas(focusRaw)
+
 	rows, err := h.DB.Query(`
-		SELECT u.id, u.username, wm.role, wm.joined_at
+		SELECT u.id, u.username, wm.role, wm.manage_areas, wm.joined_at
 		FROM workspace_members wm
 		INNER JOIN users u ON u.id = wm.user_id
 		WHERE wm.workspace_id = ?
@@ -367,11 +462,13 @@ func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 	members := []memberResponse{}
 	for rows.Next() {
 		var member memberResponse
+		var manageRaw sql.NullString
 		var joinedAt sql.NullTime
-		if err := rows.Scan(&member.UserID, &member.Username, &member.Role, &joinedAt); err != nil {
+		if err := rows.Scan(&member.UserID, &member.Username, &member.Role, &manageRaw, &joinedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read member"})
 			return
 		}
+		member.ManageAreas = effectiveManageAreas(member.Role, parseManageAreas(manageRaw), focusAreas)
 		if joinedAt.Valid {
 			member.JoinedAt = joinedAt.Time.UTC().Format("2006-01-02T15:04:05Z")
 		}
@@ -381,11 +478,91 @@ func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
+func (h *WorkspaceHandler) UpdateMember(c *gin.Context) {
+	if !middleware.RequireOwner(c) {
+		return
+	}
+
+	workspaceID, _ := c.Get("workspaceID")
+	memberID, err := strconv.Atoi(c.Param("userId"))
+	if err != nil || memberID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid member id"})
+		return
+	}
+
+	var req updateMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var role string
+	var manageRaw sql.NullString
+	err = h.DB.QueryRow(
+		`SELECT role, manage_areas FROM workspace_members WHERE workspace_id = ? AND user_id = ?`,
+		workspaceID, memberID,
+	).Scan(&role, &manageRaw)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
+		return
+	}
+	if role == middleware.RoleOwner {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the workspace owner already manages every section"})
+		return
+	}
+
+	var focusRaw sql.NullString
+	if err := h.DB.QueryRow(`SELECT focus_areas FROM workspaces WHERE id = ?`, workspaceID).Scan(&focusRaw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update member"})
+		return
+	}
+	focusAreas := parseFocusAreas(focusRaw)
+	manageAreas := intersectManageAreas(normalizeFocusAreasInput(req.ManageAreas), focusAreas)
+	encoded, err := focusAreasJSON(manageAreas)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update member"})
+		return
+	}
+
+	_, err = h.DB.Exec(
+		`UPDATE workspace_members SET manage_areas = ? WHERE workspace_id = ? AND user_id = ?`,
+		encoded, workspaceID, memberID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update member"})
+		return
+	}
+
+	var username string
+	_ = h.DB.QueryRow(`SELECT username FROM users WHERE id = ?`, memberID).Scan(&username)
+
+	raw, _ := json.Marshal(gin.H{"user_id": memberID, "username": username, "manage_areas": manageAreas})
+	h.Hub.BroadcastWorkspace(workspaceID.(int), hub.Message{
+		Type: "update", Entity: "member", Action: "updated", Payload: raw,
+	})
+	h.Hub.BroadcastWorkspace(workspaceID.(int), hub.Message{
+		Type: "update", Entity: "workspace", Action: "updated", Payload: raw,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"member": memberResponse{
+			UserID:      memberID,
+			Username:    username,
+			Role:        role,
+			ManageAreas: manageAreas,
+		},
+	})
+}
+
 func (h *WorkspaceHandler) AddMember(c *gin.Context) {
 	h.InviteMember(c)
 }
 
 func (h *WorkspaceHandler) InviteMember(c *gin.Context) {
+	if !middleware.RequireOwner(c) {
+		return
+	}
+
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -468,6 +645,10 @@ func (h *WorkspaceHandler) ListAccessRequests(c *gin.Context) {
 }
 
 func (h *WorkspaceHandler) ReviewAccessRequest(c *gin.Context) {
+	if !middleware.RequireOwner(c) {
+		return
+	}
+
 	workspaceID, _ := c.Get("workspaceID")
 	reviewerID, _ := c.Get("userID")
 	requestID, err := strconv.Atoi(c.Param("requestId"))
@@ -547,7 +728,7 @@ func (h *WorkspaceHandler) ListMyInvites(c *gin.Context) {
 		FROM workspace_invites i
 		INNER JOIN workspaces w ON w.id = i.workspace_id
 		INNER JOIN users u ON u.id = i.invited_by
-		WHERE i.invitee_user_id = ? AND i.status = 'pending'
+		WHERE i.invitee_user_id = ? AND i.status = 'pending' AND w.archived_at IS NULL
 		ORDER BY i.created_at DESC`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load invites"})
@@ -621,8 +802,11 @@ func (h *WorkspaceHandler) AcceptInvite(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "invite accepted",
-		"workspace": workspaceResponse{ID: workspaceID, Name: name, Slug: slug, Role: "member", FocusAreas: parseFocusAreas(focusRaw)},
+		"message": "invite accepted",
+		"workspace": workspaceResponse{
+			ID: workspaceID, Name: name, Slug: slug, Role: "member",
+			FocusAreas: parseFocusAreas(focusRaw), ManageAreas: []string{},
+		},
 	})
 }
 
@@ -650,6 +834,83 @@ func (h *WorkspaceHandler) DeclineInvite(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "invite declined"})
 }
 
+func (h *WorkspaceHandler) Archive(c *gin.Context) {
+	workspaceID, _ := c.Get("workspaceID")
+	role, _ := c.Get("workspaceRole")
+
+	if role.(string) != middleware.RoleOwner {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only workspace owners can archive a workspace"})
+		return
+	}
+
+	var archivedAt sql.NullTime
+	err := h.DB.QueryRow(
+		`SELECT archived_at FROM workspaces WHERE id = ?`,
+		workspaceID,
+	).Scan(&archivedAt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+		return
+	}
+	if archivedAt.Valid {
+		c.JSON(http.StatusConflict, gin.H{"error": "workspace is already archived"})
+		return
+	}
+
+	_, err = h.DB.Exec(
+		`UPDATE workspaces SET archived_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		workspaceID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not archive workspace"})
+		return
+	}
+
+	raw, _ := json.Marshal(gin.H{"workspace_id": workspaceID})
+	h.Hub.BroadcastWorkspace(workspaceID.(int), hub.Message{
+		Type: "update", Entity: "workspace", Action: "archived", Payload: raw,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "workspace archived"})
+}
+
+func (h *WorkspaceHandler) Leave(c *gin.Context) {
+	workspaceID, _ := c.Get("workspaceID")
+	userID, _ := c.Get("userID")
+	role, _ := c.Get("workspaceRole")
+
+	if role.(string) == middleware.RoleOwner {
+		c.JSON(http.StatusForbidden, gin.H{"error": "workspace owners must archive the workspace instead of leaving"})
+		return
+	}
+
+	result, err := h.DB.Exec(
+		`DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ? AND role != ?`,
+		workspaceID, userID, middleware.RoleOwner,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not leave workspace"})
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "could not leave workspace"})
+		return
+	}
+
+	if err := RemoveUserFromWorkspaceChats(h.DB, workspaceID.(int), userID.(int)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove member from chat"})
+		return
+	}
+
+	raw, _ := json.Marshal(gin.H{"username": c.GetString("username")})
+	h.Hub.BroadcastWorkspace(workspaceID.(int), hub.Message{
+		Type: "update", Entity: "member", Action: "left", Payload: raw,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "left workspace"})
+}
+
 func slugifyWorkspace(name string) string {
 	slug := strings.ToLower(strings.TrimSpace(name))
 	re := regexp.MustCompile(`[^a-z0-9]+`)
@@ -659,4 +920,24 @@ func slugifyWorkspace(name string) string {
 		return "workspace"
 	}
 	return slug
+}
+
+func uniqueWorkspaceSlug(db *sql.DB, name string, excludeWorkspaceID int) (string, error) {
+	slugBase := slugifyWorkspace(name)
+	slug := slugBase
+	for i := 1; i < 100; i++ {
+		var existingID int
+		err := db.QueryRow(
+			`SELECT id FROM workspaces WHERE slug = ? AND id != ? LIMIT 1`,
+			slug, excludeWorkspaceID,
+		).Scan(&existingID)
+		if err == sql.ErrNoRows {
+			return slug, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		slug = fmt.Sprintf("%s-%d", slugBase, i+1)
+	}
+	return "", fmt.Errorf("could not allocate unique slug for %q", name)
 }

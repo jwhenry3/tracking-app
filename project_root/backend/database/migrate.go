@@ -10,7 +10,9 @@ var migrationStatements = []string{
 		id INT AUTO_INCREMENT PRIMARY KEY,
 		username VARCHAR(255) NOT NULL UNIQUE,
 		password VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		email VARCHAR(255) NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uniq_users_email (email)
 	)`,
 	`CREATE TABLE IF NOT EXISTS workspaces (
 		id INT AUTO_INCREMENT PRIMARY KEY,
@@ -25,6 +27,7 @@ var migrationStatements = []string{
 		workspace_id INT NOT NULL,
 		user_id INT NOT NULL,
 		role VARCHAR(50) NOT NULL DEFAULT 'member',
+		manage_areas JSON NULL,
 		joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE KEY uniq_workspace_user (workspace_id, user_id),
 		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -196,6 +199,16 @@ var migrationStatements = []string{
 		FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
 		FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 	)`,
+	`CREATE TABLE IF NOT EXISTS chat_attachments (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		message_id INT NOT NULL,
+		original_name VARCHAR(255) NOT NULL,
+		stored_name VARCHAR(512) NOT NULL,
+		mime_type VARCHAR(127) NOT NULL,
+		size_bytes BIGINT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
+	)`,
 }
 
 var alterStatements = []string{
@@ -206,13 +219,32 @@ var alterStatements = []string{
 	`ALTER TABLE recurrence_occurrence_states ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE bills ADD COLUMN payment_notes TEXT NULL`,
 	`ALTER TABLE bills ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE bills ADD COLUMN paid_off BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE expenses ADD COLUMN paid BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE expenses ADD COLUMN paid_at DATE NULL`,
 	`ALTER TABLE expenses ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE expenses ADD COLUMN payment_notes TEXT NULL`,
 	`CREATE INDEX idx_chat_messages_conversation_created ON chat_messages (conversation_id, created_at, id)`,
+	`CREATE INDEX idx_chat_attachments_message ON chat_attachments (message_id)`,
 	`ALTER TABLE workspaces ADD COLUMN focus_areas JSON NULL`,
+	`ALTER TABLE workspaces ADD COLUMN archived_at TIMESTAMP NULL`,
 	`UPDATE workspaces SET focus_areas = '["planning","finances"]' WHERE focus_areas IS NULL`,
+	`ALTER TABLE users ADD COLUMN display_name VARCHAR(255) NULL`,
+	`ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512) NULL`,
+	`ALTER TABLE users ADD COLUMN settings JSON NULL`,
+	`ALTER TABLE workspace_members ADD COLUMN manage_areas JSON NULL`,
+	`ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL`,
+	`ALTER TABLE users ADD UNIQUE KEY uniq_users_email (email)`,
+	`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id INT NOT NULL,
+		token_hash CHAR(64) NOT NULL UNIQUE,
+		expires_at DATETIME NOT NULL,
+		used_at DATETIME NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
+	`CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens (user_id)`,
 }
 
 func Migrate(db *sql.DB) error {

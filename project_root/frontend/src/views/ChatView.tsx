@@ -1,21 +1,30 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquare, Send, Users } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
+import { ChatMessageAttachments, PendingChatFiles } from '@/components/chat/ChatAttachments'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { MarkdownContent } from '@/components/notes/MarkdownContent'
+import { MarkdownEditor } from '@/components/notes/MarkdownEditor'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import {
   createDirectConversation,
-  fetchChatConversations,
-  fetchChatMessages,
-  fetchWorkspaceMembers,
   sendChatMessage,
 } from '@/lib/api'
-import type { ChatConversation, ChatMessage, WorkspaceMember } from '@/lib/types'
+import { dataTransferHasFiles, filesFromList } from '@/lib/files'
+import { queryKeys } from '@/lib/queries/keys'
+import {
+  useChatConversationsQuery,
+  useChatMessagesQuery,
+  useWorkspaceMembersQuery,
+} from '@/lib/queries/hooks'
+import type { ChatConversation } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
-import { useRealtimeStore } from '@/stores/realtimeStore'
+
+const maxChatAttachments = 8
+const maxChatAttachmentBytes = 10 * 1024 * 1024
 
 function findDirectConversation(
   conversations: ChatConversation[],
@@ -33,7 +42,8 @@ function findDirectConversation(
   return conversations.find(
     (conversation) =>
       conversation.kind === 'direct'
-      && conversation.members?.includes(memberUsername)
+      && conversation.members?.length === 2
+      && conversation.members.includes(memberUsername)
       && conversation.members.includes(currentUsername ?? ''),
   )
 }
@@ -53,16 +63,29 @@ export function ChatView() {
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
   const username = useAuthStore((s) => s.username)
-  const setOnUpdate = useRealtimeStore((s) => s.setOnUpdate)
+  const queryClient = useQueryClient()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const [conversations, setConversations] = useState<ChatConversation[]>([])
-  const [members, setMembers] = useState<WorkspaceMember[]>([])
+  const workspaceNumericId = workspaceId ? Number(workspaceId) : null
+  const queriesEnabled = Boolean(token && workspaceNumericId)
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const workspaceNumericId = Number(workspaceId)
+  const conversationsQuery = useChatConversationsQuery(workspaceNumericId, queriesEnabled)
+  const membersQuery = useWorkspaceMembersQuery(workspaceNumericId)
+  const messagesQuery = useChatMessagesQuery(
+    workspaceNumericId,
+    activeConversationId,
+    queriesEnabled && Boolean(activeConversationId),
+  )
+
+  const conversations = conversationsQuery.data ?? []
+  const members = membersQuery.data?.members ?? []
+  const messages = messagesQuery.data ?? []
+  const loading = conversationsQuery.isLoading
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [conversations, activeConversationId],
@@ -87,79 +110,90 @@ export function ChatView() {
     }
   }
 
-  async function loadConversations() {
-    if (!token || !workspaceId) return
-    const [conversationData, memberData] = await Promise.all([
-      fetchChatConversations(token, workspaceNumericId),
-      fetchWorkspaceMembers(token, workspaceNumericId),
-    ])
-    setConversations(conversationData.conversations)
-    setMembers(memberData.members)
+  async function refreshChat(conversationId?: number | null) {
+    if (!workspaceNumericId) return
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.chatConversations(workspaceNumericId),
+    })
+    if (conversationId) {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.chatMessages(workspaceNumericId, conversationId),
+      })
+    }
+  }
+
+  useEffect(() => {
+    if (!conversations.length) return
     const savedConversationId = workspaceId
       ? Number(sessionStorage.getItem(chatStorageKey(workspaceId)))
       : NaN
     setActiveConversationId((current) => {
-      if (current && conversationData.conversations.some((conversation) => conversation.id === current)) {
+      if (current && conversations.some((conversation) => conversation.id === current)) {
         return current
       }
-      if (Number.isFinite(savedConversationId) && conversationData.conversations.some((conversation) => conversation.id === savedConversationId)) {
+      if (Number.isFinite(savedConversationId) && conversations.some((conversation) => conversation.id === savedConversationId)) {
         return savedConversationId
       }
-      const group = conversationData.conversations.find((conversation) => conversation.kind === 'group')
-      return group?.id ?? conversationData.conversations[0]?.id ?? null
+      const group = conversations.find((conversation) => conversation.kind === 'group')
+      return group?.id ?? conversations[0]?.id ?? null
     })
-    setLoading(false)
+  }, [conversations, workspaceId])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [messages])
+
+  function addFiles(incoming: File[]) {
+    if (incoming.length === 0) return
+    setError(null)
+    setPendingFiles((current) => {
+      const next = [...current]
+      for (const file of incoming) {
+        if (file.size > maxChatAttachmentBytes) {
+          setError(`${file.name} is larger than 10MB`)
+          continue
+        }
+        if (next.length >= maxChatAttachments) {
+          setError(`At most ${maxChatAttachments} attachments are allowed`)
+          break
+        }
+        next.push(file)
+      }
+      return next
+    })
   }
 
-  async function loadMessages(conversationId: number) {
-    if (!token || !workspaceId) return
-    const data = await fetchChatMessages(token, workspaceNumericId, conversationId)
-    setMessages(data.messages)
+  function handleDrop(event: DragEvent<HTMLFormElement>) {
+    if (!dataTransferHasFiles(event.dataTransfer)) return
+    event.preventDefault()
+    addFiles(filesFromList(event.dataTransfer.files))
   }
-
-  useEffect(() => {
-    void loadConversations()
-  }, [token, workspaceId])
-
-  useEffect(() => {
-    if (!activeConversationId) {
-      setMessages([])
-      return
-    }
-    void loadMessages(activeConversationId)
-  }, [activeConversationId, token, workspaceId])
-
-  useEffect(() => {
-    setOnUpdate((payload) => {
-      const update = payload as { entity?: string; payload?: ChatMessage }
-      if (update.entity === 'message' && update.payload?.conversation_id === activeConversationId) {
-        setMessages((current) => {
-          if (current.some((message) => message.id === update.payload?.id)) {
-            return current
-          }
-          return update.payload ? [...current, update.payload] : current
-        })
-        return
-      }
-      void loadConversations()
-      if (activeConversationId) {
-        void loadMessages(activeConversationId)
-      }
-    })
-    return () => setOnUpdate(null)
-  }, [activeConversationId, token, workspaceId])
 
   async function handleSend(event?: FormEvent) {
     event?.preventDefault()
-    if (!token || !workspaceId || !activeConversationId || !draft.trim()) return
+    if (!token || !workspaceNumericId || !activeConversationId || sending) return
     const content = draft.trim()
+    const files = pendingFiles
+    if (!content && files.length === 0) return
+
     setDraft('')
-    await sendChatMessage(token, workspaceNumericId, activeConversationId, content)
-    await loadMessages(activeConversationId)
+    setPendingFiles([])
+    setError(null)
+    setSending(true)
+    try {
+      await sendChatMessage(token, workspaceNumericId, activeConversationId, content, files)
+      await refreshChat(activeConversationId)
+    } catch (err) {
+      setDraft(content)
+      setPendingFiles(files)
+      setError(err instanceof Error ? err.message : 'Could not send message')
+    } finally {
+      setSending(false)
+    }
   }
 
   async function openMemberChat(memberUsername: string) {
-    if (!token || !workspaceId) return
+    if (!token || !workspaceNumericId) return
 
     const existing = findDirectConversation(directConversations, memberUsername, username)
     if (existing) {
@@ -168,14 +202,15 @@ export function ChatView() {
     }
 
     const conversation = await createDirectConversation(token, workspaceNumericId, memberUsername)
-    await loadConversations()
+    await refreshChat(conversation.id)
     selectConversation(conversation.id)
   }
 
-  if (!token || !workspaceId) {
+  if (!token || !workspaceId || !workspaceNumericId) {
     return null
   }
 
+  const canSend = Boolean(activeConversationId) && !sending && (Boolean(draft.trim()) || pendingFiles.length > 0)
   const activeTitle = activeConversation
     ? activeConversation.kind === 'direct'
       ? (() => {
@@ -189,8 +224,8 @@ export function ChatView() {
     : 'Select a conversation'
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <PageHeader icon={MessageSquare} title="Chat" subtitle="Group and direct messages" />
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <PageHeader icon={MessageSquare} title="Chat" subtitle="Group and direct messages" className="shrink-0" />
 
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-72 shrink-0 flex-col border-r bg-muted/10">
@@ -269,33 +304,63 @@ export function ChatView() {
                     <div key={message.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
                       <div className={cn('max-w-[80%] rounded-lg border px-3 py-2', mine ? 'bg-primary/10' : 'bg-muted/40')}>
                         <p className="text-xs font-medium text-muted-foreground">{message.sender_username}</p>
-                        <p className="mt-1 whitespace-pre-wrap text-sm">{message.content}</p>
+                        {message.content.trim() ? (
+                          <MarkdownContent
+                            content={message.content}
+                            breaks
+                            className="markdown-compact mt-1 text-foreground"
+                          />
+                        ) : null}
+                        <ChatMessageAttachments
+                          attachments={message.attachments ?? []}
+                          workspaceId={workspaceNumericId}
+                          token={token}
+                        />
                       </div>
                     </div>
                   )
                 })}
+                <div ref={messagesEndRef} />
               </div>
             )}
           </div>
 
-          <form className="flex gap-2 border-t px-4 py-3" onSubmit={(event) => void handleSend(event)}>
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void handleSend()
-                }
-              }}
-              placeholder={activeConversationId ? 'Write a message' : 'Select a conversation first'}
-              rows={2}
-              disabled={!activeConversationId}
-              className="min-h-[72px] flex-1"
-            />
-            <Button type="submit" disabled={!activeConversationId || !draft.trim()} className="self-end">
-              <Send className="h-4 w-4" />
-            </Button>
+          <form
+            className="border-t px-4 py-3"
+            onSubmit={(event) => void handleSend(event)}
+            onDragOver={(event) => {
+              if (!dataTransferHasFiles(event.dataTransfer)) return
+              event.preventDefault()
+            }}
+            onDrop={handleDrop}
+          >
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1">
+                <MarkdownEditor
+                  compact
+                  defaultMode="preview"
+                  value={draft}
+                  onChange={setDraft}
+                  onFiles={addFiles}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      void handleSend()
+                    }
+                  }}
+                  placeholder={activeConversationId ? 'Write a message' : 'Select a conversation first'}
+                  disabled={!activeConversationId || sending}
+                />
+                <PendingChatFiles
+                  files={pendingFiles}
+                  onRemove={(index) => setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                />
+                {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+              </div>
+              <Button type="submit" disabled={!canSend} className="shrink-0">
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
           </form>
         </section>
       </div>

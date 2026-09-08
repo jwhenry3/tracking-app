@@ -46,7 +46,19 @@ func NormalizeRule(rule string) string {
 	if rule == "" || strings.EqualFold(rule, "none") {
 		return ""
 	}
-	return rule
+
+	// Legacy bill_dashboard stored full iCal snippets, e.g.
+	// DTSTART:20250713T050000Z\nRRULE:FREQ=MONTHLY;BYMONTHDAY=13
+	rule = strings.ReplaceAll(rule, `\n`, "\n")
+	upper := strings.ToUpper(rule)
+	if idx := strings.Index(upper, "RRULE:"); idx >= 0 {
+		rule = rule[idx+len("RRULE:"):]
+		if newline := strings.Index(rule, "\n"); newline >= 0 {
+			rule = rule[:newline]
+		}
+	}
+
+	return strings.TrimSpace(rule)
 }
 
 func IsRecurring(rule string) bool {

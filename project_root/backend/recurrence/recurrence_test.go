@@ -29,6 +29,32 @@ func TestSemimonthlyPaydayWithWeekendAdjustment(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuleLegacyICal(t *testing.T) {
+	raw := "DTSTART:20250713T050000Z\nRRULE:BYMONTHDAY=13;FREQ=MONTHLY;INTERVAL=1"
+	got := NormalizeRule(raw)
+	want := "BYMONTHDAY=13;FREQ=MONTHLY;INTERVAL=1"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestExpandSeriesLegacyNormalizedRule(t *testing.T) {
+	rule := NormalizeRule("DTSTART:20250713T050000Z\nRRULE:BYMONTHDAY=13;FREQ=MONTHLY;INTERVAL=1")
+	series := Series{
+		ID:       1,
+		StartAt:  time.Date(2025, 7, 13, 0, 0, 0, 0, time.UTC),
+		RRule:    rule,
+		DateOnly: true,
+	}
+	from := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, 9, 30, 23, 59, 59, 0, time.UTC)
+
+	occurrences := ExpandSeries(series, from, to, nil)
+	if len(occurrences) != 3 {
+		t.Fatalf("expected 3 monthly occurrences, got %d: %v", len(occurrences), occurrences)
+	}
+}
+
 func TestAdjustToPreviousWeekday(t *testing.T) {
 	saturday := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
 	friday := AdjustToPreviousWeekday(saturday)

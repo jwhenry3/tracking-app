@@ -2,6 +2,7 @@ import { BillEntryActions } from '@/components/finance/BillEntryActions'
 import { ExpenseEntryActions } from '@/components/finance/ExpenseEntryActions'
 import { EntryActionButtons } from '@/components/ops/EntryActionButtons'
 import type { EditableEntry } from '@/components/ops/EditEntryForm'
+import { EntryTypeIcon } from '@/components/ops/EntryTypeIcon'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -19,12 +20,13 @@ import {
   timelineShowSkippedBadge,
   dueSoonBadgeClass,
   pastDueBadgeClass,
-  timelineTypeLabel,
+  signedMoney,
   typeBadgeClass,
 } from '@/lib/financeUtils'
 import { describeRecurrence } from '@/lib/recurrence'
 import type { Bill, Expense, IncomeEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { ManageActions } from '@/lib/workspacePermissions'
 
 type FinanceTimelineViewProps = {
   monthLabel: string
@@ -136,7 +138,7 @@ export function FinanceTimelineView({
 
                       <div className="space-y-3">
                         {dayItems.map((item) => {
-                          const signedAmount = item.kind === 'income' ? `+${money(item.amount)}` : `-${money(item.amount)}`
+                          const signedAmount = signedMoney(item.kind, item.amount)
                           const isSettledOrInactive =
                             (item.kind === 'bill' || item.kind === 'expense') && (item.paid || item.skipped)
 
@@ -148,7 +150,7 @@ export function FinanceTimelineView({
                               <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <Badge className={typeBadgeClass}>{timelineTypeLabel(item)}</Badge>
+                                    <EntryTypeIcon kind={item.kind} />
                                     <p className="font-medium">{item.title}</p>
                                     {timelineShowPastDueBadge(item) ? (
                                       <Badge className={pastDueBadgeClass}>Past due</Badge>
@@ -193,9 +195,11 @@ export function FinanceTimelineView({
                                     onEdit={() => onEdit({ kind: 'expense', data: item.data })}
                                   />
                                 ) : (
-                                  <EntryActionButtons
-                                    onEdit={() => onEdit({ kind: 'income', data: item.data })}
-                                  />
+                                  <ManageActions area="finances">
+                                    <EntryActionButtons
+                                      onEdit={() => onEdit({ kind: 'income', data: item.data })}
+                                    />
+                                  </ManageActions>
                                 )}
                               </div>
                             </div>

@@ -36,14 +36,15 @@ type EditEntryFormProps = {
   token: string
   workspaceId: number
   entry: EditableEntry
+  defaultScope?: OccurrenceScope
   onSaved: () => void
   onDeleted: () => void
 }
 
-export function EditEntryForm({ token, workspaceId, entry, onSaved, onDeleted }: EditEntryFormProps) {
+export function EditEntryForm({ token, workspaceId, entry, defaultScope, onSaved, onDeleted }: EditEntryFormProps) {
   const isRecurring = entry.kind !== 'expense' && Boolean(getSeriesRule(entry))
 
-  const [scope, setScope] = useState<OccurrenceScope>(isRecurring ? 'this' : 'all')
+  const [scope, setScope] = useState<OccurrenceScope>(defaultScope ?? (isRecurring ? 'this' : 'all'))
   const [title, setTitle] = useState(getTitle(entry))
   const [amount, setAmount] = useState(getAmount(entry))
   const [date, setDate] = useState(getDate(entry))
@@ -51,12 +52,13 @@ export function EditEntryForm({ token, workspaceId, entry, onSaved, onDeleted }:
   const [notes, setNotes] = useState(entry.kind === 'income' ? entry.data.notes : entry.kind === 'expense' ? entry.data.notes : '')
   const [category, setCategory] = useState(entry.kind === 'bill' ? entry.data.category : entry.kind === 'expense' ? entry.data.category : 'general')
   const [paid, setPaid] = useState(entry.kind === 'bill' ? entry.data.paid : false)
+  const [paidOff, setPaidOff] = useState(entry.kind === 'bill' ? Boolean(entry.data.paid_off) : false)
   const [recurrence, setRecurrence] = useState<RecurrenceConfig>(() => buildRecurrenceState(entry))
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     const nextDate = getDate(entry)
-    setScope(isRecurring ? 'this' : 'all')
+    setScope(defaultScope ?? (isRecurring ? 'this' : 'all'))
     setTitle(getTitle(entry))
     setAmount(getAmount(entry))
     setDate(nextDate)
@@ -64,8 +66,9 @@ export function EditEntryForm({ token, workspaceId, entry, onSaved, onDeleted }:
     setNotes(entry.kind === 'income' ? entry.data.notes : entry.kind === 'expense' ? entry.data.notes : '')
     setCategory(entry.kind === 'bill' ? entry.data.category : entry.kind === 'expense' ? entry.data.category : 'general')
     setPaid(entry.kind === 'bill' ? entry.data.paid : false)
+    setPaidOff(entry.kind === 'bill' ? Boolean(entry.data.paid_off) : false)
     setRecurrence(buildRecurrenceState(entry))
-  }, [entry, isRecurring])
+  }, [entry, isRecurring, defaultScope])
 
   const recurrenceReadOnly = isRecurring && scope === 'this'
   const recurrenceAnchorDate = getRecurrenceAnchorDate(entry, date)
@@ -104,6 +107,7 @@ export function EditEntryForm({ token, workspaceId, entry, onSaved, onDeleted }:
           date,
           category,
           paid,
+          paid_off: paidOff,
           recurrence: recurrenceRule,
         })
       } else {
@@ -183,10 +187,19 @@ export function EditEntryForm({ token, workspaceId, entry, onSaved, onDeleted }:
       ) : null}
 
       {entry.kind === 'bill' ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} />
-          Mark as paid
-        </label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} />
+            Mark as paid
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={paidOff} onChange={(event) => setPaidOff(event.target.checked)} />
+            Mark as paid off
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Paid off bills are hidden from the calendar and current bill views.
+          </p>
+        </div>
       ) : null}
 
       {entry.kind !== 'expense' ? (

@@ -10,7 +10,9 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend",
     "build:backend": "cd backend && go build -o server.exe .",
-    "seed:db": "cd backend && go run ./cmd/seed"
+    "seed:db": "cd backend && go run ./cmd/seed",
+    "analyze:legacy": "cd backend && go run ./cmd/legacy-analyze",
+    "migrate:legacy": "cd backend && go run ./cmd/migrate-legacy"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

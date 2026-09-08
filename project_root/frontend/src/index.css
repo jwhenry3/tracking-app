@@ -163,4 +163,94 @@
   body {
     @apply bg-background text-foreground min-h-screen antialiased;
   }
+
+  .markdown-content :where(h1, h2, h3, h4) {
+    @apply mt-4 mb-2 font-semibold text-foreground;
+  }
+
+  .markdown-content :where(h1) {
+    @apply text-xl;
+  }
+
+  .markdown-content :where(h2) {
+    @apply text-lg;
+  }
+
+  .markdown-content :where(p, ul, ol, blockquote, pre) {
+    @apply mb-3 last:mb-0;
+  }
+
+  .markdown-content :where(ul, ol) {
+    @apply ml-5;
+  }
+
+  .markdown-content :where(ul) {
+    @apply list-disc;
+  }
+
+  .markdown-content :where(ol) {
+    @apply list-decimal;
+  }
+
+  .markdown-content :where(a) {
+    @apply text-primary underline underline-offset-2;
+  }
+
+  .markdown-content :where(code) {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+  }
+
+  .markdown-content :where(pre) {
+    @apply overflow-x-auto rounded-lg bg-muted p-3;
+  }
+
+  .markdown-content :where(pre code) {
+    @apply bg-transparent p-0;
+  }
+
+  .markdown-content :where(blockquote) {
+    @apply border-l-2 border-border pl-3 italic;
+  }
+
+  .markdown-content :where(img) {
+    @apply my-2 max-h-64 max-w-full rounded-md;
+  }
+
+  .markdown-content :where(table) {
+    @apply mb-3 w-full border-collapse text-sm;
+  }
+
+  .markdown-content :where(th, td) {
+    @apply border border-border px-2 py-1;
+  }
+
+  .markdown-content.markdown-compact :where(h1, h2, h3, h4) {
+    @apply mt-2 mb-1;
+  }
+
+  .markdown-content.markdown-compact :where(p, ul, ol, blockquote, pre, table) {
+    @apply mb-2 last:mb-0;
+  }
+
+  .schedule-chip {
+    background: color-mix(in srgb, var(--schedule-chip-color) 14%, transparent);
+    color: color-mix(in srgb, var(--schedule-chip-color) 62%, var(--foreground));
+    @apply flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-xs;
+  }
+
+  :is([data-theme="dark"], [data-theme="midnight"]) .schedule-chip {
+    background: color-mix(in srgb, var(--schedule-chip-color) 24%, var(--card));
+    color: color-mix(in srgb, var(--schedule-chip-color) 38%, var(--foreground));
+  }
+
+  .schedule-chip-swatch {
+    background: color-mix(in srgb, var(--schedule-chip-color) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--schedule-chip-color) 35%, transparent);
+    @apply h-2.5 w-2.5 rounded-full;
+  }
+
+  :is([data-theme="dark"], [data-theme="midnight"]) .schedule-chip-swatch {
+    background: color-mix(in srgb, var(--schedule-chip-color) 24%, var(--card));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--schedule-chip-color) 30%, var(--border));
+  }
 }

@@ -9,16 +9,20 @@ import {
   LayoutGrid,
   MessageSquare,
   Plus,
+  Settings2,
   Wallet,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { AddWorkspaceDialog } from '@/components/workspace/AddWorkspaceDialog'
+import { RealtimeQuerySync } from '@/components/layout/RealtimeQuerySync'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { UserProfilePanel } from '@/components/profile/UserProfilePanel'
 import { WorkspacePanel } from '@/components/workspace/WorkspacePanel'
 import { cn } from '@/lib/utils'
 import type { WorkspaceFocusArea } from '@/lib/types'
 import { isWorkspaceRouteAllowed, workspaceHasFocus } from '@/lib/workspaceFocus'
+import { canManageWorkspace } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
 import { useRealtimeStore } from '@/stores/realtimeStore'
 
@@ -26,6 +30,10 @@ type NavItem = {
   to: string
   label: string
   icon: LucideIcon
+  matchSubpaths?: boolean
+  focusArea?: WorkspaceFocusArea
+  requireManage?: boolean
+  requireAnyManage?: boolean
 }
 
 type NavSection = {
@@ -42,6 +50,7 @@ const navSections: NavSection[] = [
     items: [
       { to: 'calendar', label: 'Calendar', icon: CalendarDays },
       { to: 'chat', label: 'Chat', icon: MessageSquare },
+      { to: 'manage', label: 'Manage', icon: Settings2, matchSubpaths: true, requireAnyManage: true },
     ],
   },
   {
@@ -51,8 +60,7 @@ const navSections: NavSection[] = [
     items: [
       { to: 'planner/daily', label: 'Daily', icon: LayoutGrid },
       { to: 'planner/weekly', label: 'Weekly', icon: CalendarRange },
-      { to: 'planner/monthly', label: 'Monthly', icon: CalendarDays },
-      { to: 'todos', label: 'Todos & notes', icon: CheckSquare },
+      { to: 'check-lists', label: 'Check lists & notes', icon: CheckSquare },
     ],
   },
   {
@@ -87,7 +95,6 @@ export function AppShell() {
   const location = useLocation()
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
-  const username = useAuthStore((s) => s.username)
   const workspaces = useAuthStore((s) => s.workspaces)
   const activeWorkspaceId = useAuthStore((s) => s.activeWorkspaceId)
   const setActiveWorkspace = useAuthStore((s) => s.setActiveWorkspace)
@@ -96,10 +103,10 @@ export function AppShell() {
   const connect = useRealtimeStore((s) => s.connect)
   const disconnect = useRealtimeStore((s) => s.disconnect)
   const connected = useRealtimeStore((s) => s.connected)
-  const subscribe = useRealtimeStore((s) => s.subscribe)
 
   const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false)
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
 
   function isSectionCollapsed(sectionId: string) {
@@ -119,9 +126,31 @@ export function AppShell() {
 
   const visibleSections = useMemo(
     () =>
-      navSections.filter(
-        (section) => !section.focusArea || workspaceHasFocus(currentWorkspace, section.focusArea),
-      ),
+      navSections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => {
+            const area = item.focusArea ?? section.focusArea
+            if (area && !workspaceHasFocus(currentWorkspace, area)) {
+              return false
+            }
+            if (item.requireAnyManage) {
+              return (
+                canManageWorkspace(currentWorkspace, 'planning') ||
+                canManageWorkspace(currentWorkspace, 'finances')
+              )
+            }
+            if (item.requireManage && area && !canManageWorkspace(currentWorkspace, area)) {
+              return false
+            }
+            return true
+          }),
+        }))
+        .filter(
+          (section) =>
+            section.items.length > 0 &&
+            (!section.focusArea || workspaceHasFocus(currentWorkspace, section.focusArea)),
+        ),
     [currentWorkspace],
   )
 
@@ -138,15 +167,6 @@ export function AppShell() {
       if (connectionId !== undefined) disconnect(connectionId)
     }
   }, [token, workspaceId, connect, disconnect])
-
-  useEffect(() => {
-    return subscribe((payload) => {
-      const message = payload as { entity?: string }
-      if (message.entity === 'workspace') {
-        void loadWorkspaces()
-      }
-    })
-  }, [subscribe, loadWorkspaces])
 
   useEffect(() => {
     if (!workspaceId || !currentWorkspace) return
@@ -191,7 +211,11 @@ export function AppShell() {
     <>
       <div className="flex h-screen bg-background text-foreground">
         <aside className="flex w-[72px] shrink-0 flex-col items-center gap-2 border-r bg-[#1a1d21] py-3 text-white">
-          <UserMenu username={username} connected={connected} onLogout={handleLogout} />
+          <UserMenu
+            connected={connected}
+            onOpenSettings={() => setProfilePanelOpen(true)}
+            onLogout={handleLogout}
+          />
 
           <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
             {workspaces.map((workspace) => (
@@ -261,23 +285,32 @@ export function AppShell() {
                   </button>
                   {!collapsed ? (
                     <div className="space-y-1">
-                      {section.items.map(({ to, label, icon: Icon }) => (
+                      {section.items.map(({ to, label, icon: Icon, matchSubpaths }) => {
+                        const itemPath = `/w/${workspaceId}/${to}`
+                        return (
                         <NavLink
                           key={to}
-                          to={`/w/${workspaceId}/${to}`}
-                          className={({ isActive }) =>
-                            cn(
+                          to={itemPath}
+                          end={!matchSubpaths}
+                          className={({ isActive }) => {
+                            const active =
+                              isActive ||
+                              (matchSubpaths &&
+                                (location.pathname === itemPath ||
+                                  location.pathname.startsWith(`${itemPath}/`)))
+                            return cn(
                               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition',
-                              isActive
+                              active
                                 ? 'bg-primary text-primary-foreground'
                                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                             )
-                          }
+                          }}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           <span className="truncate">{label}</span>
                         </NavLink>
-                      ))}
+                        )
+                      })}
                     </div>
                   ) : null}
                 </div>
@@ -286,10 +319,13 @@ export function AppShell() {
           </nav>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <RealtimeQuerySync />
           <Outlet />
         </main>
       </div>
+
+      <UserProfilePanel open={profilePanelOpen} onOpenChange={setProfilePanelOpen} />
 
       <WorkspacePanel
         open={workspacePanelOpen}

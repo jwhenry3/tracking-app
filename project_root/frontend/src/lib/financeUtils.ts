@@ -4,6 +4,18 @@ export function money(value: number) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(value)
 }
 
+export function signedMoney(kind: 'income' | 'bill' | 'expense', value: number) {
+  const formatted = money(value)
+  return kind === 'income' ? `+${formatted}` : `-${formatted}`
+}
+
+export const signedMoneyIncomeClass = 'text-[#6aab82]'
+export const signedMoneyOutflowClass = 'text-[#d4928f]'
+
+export function signedMoneyTextClass(kind: 'income' | 'bill' | 'expense') {
+  return kind === 'income' ? signedMoneyIncomeClass : signedMoneyOutflowClass
+}
+
 export type BillPaymentStatus = 'due' | 'paid' | 'skipped'
 
 export const financeGreen = '#15803d'

@@ -59,8 +59,8 @@ func seedWorkspaceChat(tx *sql.Tx, workspaceID, demoID, partnerID int) error {
 		senderID int
 		content  string
 	}{
-		{demoID, "Welcome to the Demo Family workspace chat."},
-		{partnerID, "Thanks! I'll post bill reminders here too."},
+		{demoID, "Welcome to the Demo Family workspace chat.\n\nUse **markdown** for lists, links, and emphasis."},
+		{partnerID, "Thanks! I'll post bill reminders here too.\n\n- groceries\n- utilities"},
 		{demoID, "Perfect. Grocery run is planned for Saturday."},
 	}
 	for _, message := range groupMessages {
@@ -160,11 +160,12 @@ func ensureSelfConversation(tx *sql.Tx, workspaceID, userID int) (int, error) {
 	err := tx.QueryRow(`
 		SELECT c.id
 		FROM chat_conversations c
-		INNER JOIN chat_conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+		INNER JOIN chat_conversation_members cm ON cm.conversation_id = c.id
 		WHERE c.workspace_id = ? AND c.kind = 'direct'
 		GROUP BY c.id
-		HAVING COUNT(cm.user_id) = 1
-		LIMIT 1`, userID, workspaceID,
+		HAVING COUNT(DISTINCT cm.user_id) = 1
+			AND SUM(CASE WHEN cm.user_id = ? THEN 1 ELSE 0 END) = 1
+		LIMIT 1`, workspaceID, userID,
 	).Scan(&conversationID)
 	if err == sql.ErrNoRows {
 		result, insertErr := tx.Exec(

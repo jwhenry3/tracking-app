@@ -1,51 +1,46 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, LayoutGrid, Plus } from 'lucide-react'
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, ListChecks, Plus } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
-import { BillEntryActions } from '@/components/finance/BillEntryActions'
-import { ExpenseEntryActions } from '@/components/finance/ExpenseEntryActions'
 import { PayBillDialog } from '@/components/finance/PayBillDialog'
 import { PayExpenseDialog } from '@/components/finance/PayExpenseDialog'
-import { OccurrenceMeta } from '@/components/forms/OccurrenceScopePicker'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
-import { EntryActionButtons } from '@/components/ops/EntryActionButtons'
 import { OperationDialog } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderDivider, PageHeaderIconButton } from '@/components/layout/PageHeader'
 import { AddDayEntryForm, type AddDayEntryTab } from '@/components/planner/AddDayEntryForm'
-import { PlannerDayItems } from '@/components/planner/PlannerDayItems'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { fetchBills, fetchEvents, fetchExpenses, fetchIncome } from '@/lib/api'
+import { PlannerDayPanel } from '@/components/planner/PlannerDayPanel'
+import type { PlannerScheduleItem } from '@/components/planner/PlannerScheduleRow'
+import { WeeklyPlannerGrid } from '@/components/planner/WeeklyPlannerGrid'
+import { Card, CardContent } from '@/components/ui/card'
+import { formatDayLabel, normalizeFinanceDate } from '@/lib/financeUtils'
+import { invalidatePlannerDay } from '@/lib/queries/invalidate'
 import {
-  dueSoonBadgeClass,
-  formatDayLabel,
-  isDueSoon,
-  isPastDue,
-  money,
-  normalizeFinanceDate,
-  paidBadgeClass,
-  pastDueBadgeClass,
-  typeBadgeClass,
-} from '@/lib/financeUtils'
-import { describeRecurrence } from '@/lib/recurrence'
-import type { Bill, Expense, IncomeEntry, PlannerEvent } from '@/lib/types'
+  useBillsQuery,
+  useEventsQuery,
+  useExpensesQuery,
+  useIncomeQuery,
+} from '@/lib/queries/hooks'
+import {
+  isCheckListDayVisible,
+  loadPlannerCheckListPrefs,
+  savePlannerCheckListPrefs,
+  toggleAllCheckLists,
+  toggleCheckListDay,
+  type PlannerCheckListPrefs,
+} from '@/lib/plannerCheckListPrefs'
+import { cn } from '@/lib/utils'
+import type { Bill, Expense } from '@/lib/types'
+import { useWorkspacePermissions } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
-import { useRealtimeStore } from '@/stores/realtimeStore'
 
 type PlannerViewProps = {
-  mode: 'daily' | 'weekly' | 'monthly'
+  mode: 'daily' | 'weekly'
 }
-
-type PlannerIncomeItem = IncomeEntry & { kind: 'income'; date: string }
-type PlannerBillItem = Bill & { kind: 'bill'; date: string }
-type PlannerExpenseItem = Expense & { kind: 'expense'; date: string }
-type PlannerScheduleItem = PlannerEvent | PlannerIncomeItem | PlannerBillItem | PlannerExpenseItem
 
 const plannerMeta = {
   daily: { title: 'Daily planner', icon: CalendarDays },
   weekly: { title: 'Weekly planner', icon: CalendarRange },
-  monthly: { title: 'Monthly planner', icon: LayoutGrid },
 } as const
 
 function isoDate(date: Date) {
@@ -62,17 +57,8 @@ function datesInPlannerRange(mode: PlannerViewProps['mode'], anchor: Date): stri
   if (mode === 'daily') {
     return [isoDate(anchor)]
   }
-  if (mode === 'weekly') {
-    const start = addDays(anchor, -anchor.getDay())
-    return Array.from({ length: 7 }, (_, index) => isoDate(addDays(start, index)))
-  }
-  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
-  const days: string[] = []
-  for (let cursor = new Date(start); cursor <= end; cursor = addDays(cursor, 1)) {
-    days.push(isoDate(cursor))
-  }
-  return days
+  const start = addDays(anchor, -anchor.getDay())
+  return Array.from({ length: 7 }, (_, index) => isoDate(addDays(start, index)))
 }
 
 function isInRange(iso: string, start: string, end: string) {
@@ -80,16 +66,22 @@ function isInRange(iso: string, start: string, end: string) {
   return day >= start.slice(0, 10) && day <= end.slice(0, 10)
 }
 
+function formatDayToggleLabel(day: string) {
+  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 export function PlannerView({ mode }: PlannerViewProps) {
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
-  const setOnUpdate = useRealtimeStore((s) => s.setOnUpdate)
+  const { canAddEntry } = useWorkspacePermissions()
+  const queryClient = useQueryClient()
+  const workspaceNumericId = workspaceId ? Number(workspaceId) : null
+  const queriesEnabled = Boolean(token && workspaceNumericId)
   const [anchor, setAnchor] = useState(() => new Date())
-  const [events, setEvents] = useState<PlannerEvent[]>([])
-  const [income, setIncome] = useState<IncomeEntry[]>([])
-  const [bills, setBills] = useState<Bill[]>([])
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [reloadKey, setReloadKey] = useState(0)
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [addDate, setAddDate] = useState(() => isoDate(new Date()))
@@ -98,63 +90,74 @@ export function PlannerView({ mode }: PlannerViewProps) {
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [payExpense, setPayExpense] = useState<Expense | null>(null)
   const [payExpenseDialogOpen, setPayExpenseDialogOpen] = useState(false)
+  const [selectedWeekDay, setSelectedWeekDay] = useState<string | null>(null)
+  const [checkListPrefs, setCheckListPrefs] = useState<PlannerCheckListPrefs>({
+    showAll: true,
+    hiddenDays: [],
+  })
+
+  const todayIso = isoDate(new Date())
 
   const range = useMemo(() => {
     if (mode === 'daily') {
       const day = isoDate(anchor)
       return { start: `${day}T00:00:00Z`, end: `${day}T23:59:59Z`, label: anchor.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
     }
-    if (mode === 'weekly') {
-      const start = addDays(anchor, -anchor.getDay())
-      const end = addDays(start, 6)
-      return {
-        start: `${isoDate(start)}T00:00:00Z`,
-        end: `${isoDate(end)}T23:59:59Z`,
-        label: `Week of ${start.toLocaleDateString()}`,
-      }
-    }
-    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-    const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+    const start = addDays(anchor, -anchor.getDay())
+    const end = addDays(start, 6)
     return {
       start: `${isoDate(start)}T00:00:00Z`,
       end: `${isoDate(end)}T23:59:59Z`,
-      label: start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+      label: `Week of ${start.toLocaleDateString()}`,
     }
   }, [anchor, mode])
 
   const plannerDays = useMemo(() => datesInPlannerRange(mode, anchor), [mode, anchor])
-  const showDayItems = mode === 'daily' || mode === 'weekly'
 
-  async function loadPlannerData() {
-    if (!token || !workspaceId) return
-    const id = Number(workspaceId)
-    const [eventsData, incomeData, billsData, expensesData] = await Promise.all([
-      fetchEvents(token, id, range.start, range.end),
-      fetchIncome(token, id, range.start, range.end),
-      fetchBills(token, id, range.start, range.end),
-      fetchExpenses(token, id),
-    ])
-    setEvents(eventsData.events)
-    setIncome(incomeData.income)
-    setBills(billsData.bills)
-    setExpenses(
-      expensesData.expenses.filter((expense) =>
-        isInRange(normalizeFinanceDate(expense.expense_date), range.start, range.end),
-      ),
-    )
-    setReloadKey((key) => key + 1)
+  const eventsQuery = useEventsQuery(workspaceNumericId, range.start, range.end, queriesEnabled)
+  const incomeQuery = useIncomeQuery(workspaceNumericId, range.start, range.end, queriesEnabled)
+  const billsQuery = useBillsQuery(workspaceNumericId, range.start, range.end, queriesEnabled)
+  const expensesQuery = useExpensesQuery(workspaceNumericId, queriesEnabled)
+
+  const events = eventsQuery.data ?? []
+  const income = incomeQuery.data ?? []
+  const bills = billsQuery.data ?? []
+  const expenses = useMemo(
+    () => (expensesQuery.data ?? []).filter((expense) =>
+      isInRange(normalizeFinanceDate(expense.expense_date), range.start, range.end),
+    ),
+    [expensesQuery.data, range.end, range.start],
+  )
+
+  function refreshPlanner(day?: string | null) {
+    if (!workspaceNumericId) return
+    const targetDay = day ?? (mode === 'weekly' ? selectedWeekDay : plannerDays[0]) ?? addDate
+    void invalidatePlannerDay(queryClient, workspaceNumericId, targetDay)
   }
 
   useEffect(() => {
-    void loadPlannerData()
-  }, [token, workspaceId, range.start, range.end])
+    if (!workspaceId) return
+    setCheckListPrefs(loadPlannerCheckListPrefs(Number(workspaceId), mode))
+  }, [workspaceId, mode])
 
   useEffect(() => {
-    setOnUpdate(() => {
-      void loadPlannerData()
+    if (mode !== 'weekly') return
+    setSelectedWeekDay((current) => {
+      if (current && plannerDays.includes(current)) return current
+      if (plannerDays.includes(todayIso)) return todayIso
+      return plannerDays[0] ?? null
     })
-    return () => setOnUpdate(null)
-  }, [token, workspaceId, range.start, range.end])
+  }, [mode, plannerDays, todayIso])
+
+  function persistCheckListPrefs(next: PlannerCheckListPrefs) {
+    if (!workspaceId) return
+    setCheckListPrefs(next)
+    savePlannerCheckListPrefs(Number(workspaceId), mode, next)
+  }
+
+  function toggleDayCheckLists(day: string) {
+    persistCheckListPrefs(toggleCheckListDay(checkListPrefs, day))
+  }
 
   const scheduleByDay = useMemo(() => {
     const map = new Map<string, PlannerScheduleItem[]>()
@@ -178,13 +181,6 @@ export function PlannerView({ mode }: PlannerViewProps) {
 
     return map
   }, [events, income, bills, expenses])
-
-  const grouped = useMemo(() => {
-    if (showDayItems) {
-      return plannerDays.map((day) => [day, scheduleByDay.get(day) ?? []] as const)
-    }
-    return [...scheduleByDay.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [showDayItems, plannerDays, scheduleByDay])
 
   function closeDialog() {
     setDialogOpen(false)
@@ -213,20 +209,44 @@ export function PlannerView({ mode }: PlannerViewProps) {
     setPayExpenseDialogOpen(true)
   }
 
-  if (!token || !workspaceId) {
+  if (!token || !workspaceId || !workspaceNumericId) {
     return null
   }
 
   const planner = plannerMeta[mode]
-  const step = mode === 'daily' ? 1 : mode === 'weekly' ? 7 : 30
-  const workspaceNumericId = Number(workspaceId)
+  const step = mode === 'daily' ? 1 : 7
+  const defaultAddDay = mode === 'weekly' && selectedWeekDay ? selectedWeekDay : isoDate(anchor)
+
+  function renderDayPanel(day: string) {
+    const dayLabel = formatDayToggleLabel(day)
+    const checkListsVisible = isCheckListDayVisible(checkListPrefs, day)
+    const dayItems = scheduleByDay.get(day) ?? []
+
+    return (
+      <PlannerDayPanel
+        day={day}
+        dayLabel={dayLabel}
+        dayItems={dayItems}
+        checkListsVisible={checkListsVisible}
+        token={token!}
+        workspaceId={workspaceNumericId!}
+        scrollContent={mode === 'weekly'}
+        onToggleCheckLists={() => toggleDayCheckLists(day)}
+        onAdd={() => startAdd(day)}
+        onEdit={startEdit}
+        onPay={startPay}
+        onPayExpense={startPayExpense}
+      />
+    )
+  }
 
   return (
-    <>
+    <div className={cn('flex h-full min-h-0 flex-1 flex-col overflow-hidden', mode === 'weekly' && 'min-h-0')}>
       <PageHeader
         icon={planner.icon}
         title={planner.title}
         subtitle={range.label}
+        className="shrink-0"
       >
         <PageHeaderIconButton
           icon={ChevronLeft}
@@ -245,67 +265,54 @@ export function PlannerView({ mode }: PlannerViewProps) {
         />
         <PageHeaderDivider />
         <PageHeaderIconButton
+          icon={ListChecks}
+          label={checkListPrefs.showAll ? 'Hide all check lists' : 'Show all check lists'}
+          onClick={() => persistCheckListPrefs(toggleAllCheckLists(checkListPrefs))}
+        />
+        {canAddEntry ? (
+        <PageHeaderIconButton
           icon={Plus}
           label="Add entry"
-          onClick={() => startAdd(isoDate(anchor))}
+          onClick={() => startAdd(defaultAddDay)}
         />
+        ) : null}
       </PageHeader>
 
-      <div className="space-y-6 p-4">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {grouped.length === 0 ? (
-            <Card className="md:col-span-2 xl:col-span-3">
-              <CardContent className="py-10 text-center text-muted-foreground">
-                Nothing scheduled in this range.
-              </CardContent>
-            </Card>
-          ) : (
-            grouped.map(([day, dayItems]) => (
-              <Card key={day} className={mode === 'daily' ? 'md:col-span-2 xl:col-span-3' : undefined}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                  <CardTitle className="text-base">
-                    {new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </CardTitle>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                    title="Add entry"
-                    aria-label="Add entry"
-                    onClick={() => startAdd(day)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {dayItems.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
-                  ) : (
-                    dayItems.map((item) => (
-                      <PlannerScheduleRow
-                        key={'occurrence_id' in item ? item.occurrence_id : `${item.kind}-${item.id}`}
-                        item={item}
-                        onEdit={startEdit}
-                        onPay={startPay}
-                        onPayExpense={startPayExpense}
-                      />
-                    ))
-                  )}
-
-                  {showDayItems ? (
-                    <PlannerDayItems
-                      token={token}
-                      workspaceId={workspaceNumericId}
-                      date={day}
-                      reloadKey={reloadKey}
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
+      <div
+        className={cn(
+          mode === 'weekly'
+            ? 'flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4'
+            : 'min-h-0 flex-1 overflow-y-auto space-y-6 p-4',
+        )}
+      >
+        {mode === 'weekly' ? (
+          <>
+            <div className="shrink-0">
+              <WeeklyPlannerGrid
+                days={plannerDays}
+                scheduleByDay={scheduleByDay}
+                selectedDay={selectedWeekDay}
+                todayIso={todayIso}
+                onSelectDay={setSelectedWeekDay}
+              />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {selectedWeekDay ? (
+                renderDayPanel(selectedWeekDay)
+              ) : (
+                <Card className="flex h-full w-full flex-col overflow-hidden">
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    Select a day to view its planner.
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="mx-auto max-w-3xl">
+            {renderDayPanel(plannerDays[0])}
+          </div>
+        )}
       </div>
 
       <OperationDialog
@@ -324,11 +331,11 @@ export function PlannerView({ mode }: PlannerViewProps) {
             workspaceId={workspaceNumericId}
             entry={editEntry}
             onSaved={() => {
-              void loadPlannerData()
+              refreshPlanner()
               closeDialog()
             }}
             onDeleted={() => {
-              void loadPlannerData()
+              refreshPlanner()
               closeDialog()
             }}
           />
@@ -340,7 +347,7 @@ export function PlannerView({ mode }: PlannerViewProps) {
             defaultDate={addDate}
             defaultTab={addTab}
             onCreated={() => {
-              void loadPlannerData()
+              refreshPlanner()
               closeDialog()
             }}
           />
@@ -356,7 +363,7 @@ export function PlannerView({ mode }: PlannerViewProps) {
         token={token}
         workspaceId={workspaceNumericId}
         bill={payBill}
-        onComplete={() => void loadPlannerData()}
+        onComplete={() => refreshPlanner()}
       />
 
       <PayExpenseDialog
@@ -368,126 +375,8 @@ export function PlannerView({ mode }: PlannerViewProps) {
         token={token}
         workspaceId={workspaceNumericId}
         expense={payExpense}
-        onComplete={() => void loadPlannerData()}
+        onComplete={() => refreshPlanner()}
       />
-    </>
-  )
-}
-
-function PlannerScheduleRow({
-  item,
-  onEdit,
-  onPay,
-  onPayExpense,
-}: {
-  item: PlannerScheduleItem
-  onEdit: (entry: EditableEntry) => void
-  onPay: (bill: Bill) => void
-  onPayExpense: (expense: Expense) => void
-}) {
-  if (!('kind' in item)) {
-    const event = item
-    return (
-      <div className="rounded-lg border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Badge className="bg-[#2563eb] text-white">Event</Badge>
-              <p className="font-medium">{event.title}</p>
-              {event.is_recurring ? <Badge className="bg-secondary text-secondary-foreground">Recurring</Badge> : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {new Date(event.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </p>
-            {event.description ? (
-              <p className="mt-2 text-sm text-muted-foreground">{event.description}</p>
-            ) : null}
-            <OccurrenceMeta
-              isRecurring={event.is_recurring}
-              recurrence={describeRecurrence(event.recurrence, event.start_at.slice(0, 10))}
-            />
-          </div>
-          <EntryActionButtons onEdit={() => onEdit({ kind: 'event', data: event })} />
-        </div>
-      </div>
-    )
-  }
-
-  if (item.kind === 'income') {
-    return (
-      <div className="rounded-lg border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Badge className="bg-[#15803d] text-white">Income</Badge>
-              <p className="font-medium">{item.title}</p>
-              {item.is_recurring ? <Badge className="bg-secondary text-secondary-foreground">Recurring</Badge> : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {money(item.amount)} · {formatDayLabel(item.date)}
-            </p>
-            <OccurrenceMeta
-              isRecurring={item.is_recurring}
-              recurrence={describeRecurrence(item.recurrence, item.date)}
-            />
-          </div>
-          <EntryActionButtons onEdit={() => onEdit({ kind: 'income', data: item })} />
-        </div>
-      </div>
-    )
-  }
-
-  if (item.kind === 'bill') {
-    const pastDue = !item.paid && !item.skipped && isPastDue(item.date)
-    const dueSoon = !item.paid && !item.skipped && isDueSoon(item.date)
-
-    return (
-      <div className="rounded-lg border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className={typeBadgeClass}>Bill</Badge>
-              <p className="font-medium">{item.title}</p>
-              {pastDue ? <Badge className={pastDueBadgeClass}>Past due</Badge> : null}
-              {dueSoon ? <Badge className={dueSoonBadgeClass}>Due soon</Badge> : null}
-              {item.paid ? <Badge className={paidBadgeClass}>Paid</Badge> : null}
-              {item.skipped ? <Badge className="bg-secondary text-secondary-foreground">Skipped</Badge> : null}
-              {item.is_recurring ? <Badge className={typeBadgeClass}>Recurring</Badge> : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {money(item.amount)} · due {formatDayLabel(item.date)}
-            </p>
-            <OccurrenceMeta
-              isRecurring={item.is_recurring}
-              recurrence={describeRecurrence(item.recurrence, item.date)}
-            />
-          </div>
-          <BillEntryActions bill={item} onPay={() => onPay(item)} onEdit={() => onEdit({ kind: 'bill', data: item })} />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-lg border p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className={typeBadgeClass}>Expense</Badge>
-            <p className="font-medium">{item.title}</p>
-            {item.paid ? <Badge className={paidBadgeClass}>Paid</Badge> : null}
-            {item.skipped ? <Badge className="bg-secondary text-secondary-foreground">Skipped</Badge> : null}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {money(item.amount)} · {formatDayLabel(item.date)}
-          </p>
-        </div>
-        <ExpenseEntryActions
-          expense={item}
-          onPay={() => onPayExpense(item)}
-          onEdit={() => onEdit({ kind: 'expense', data: item })}
-        />
-      </div>
     </div>
   )
 }

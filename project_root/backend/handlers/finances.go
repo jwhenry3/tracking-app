@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"fullstack-app/hub"
+	"fullstack-app/middleware"
 	"fullstack-app/recurrence"
 
 	"github.com/gin-gonic/gin"
@@ -21,37 +22,37 @@ type FinanceHandler struct {
 }
 
 type incomeOccurrencePayload struct {
-	SeriesID     int     `json:"series_id"`
-	OccurrenceID string  `json:"occurrence_id"`
-	ID           int     `json:"id"`
-	WorkspaceID  int     `json:"workspace_id"`
-	Title        string  `json:"title"`
-	Amount       float64 `json:"amount"`
-	EntryDate    string  `json:"entry_date"`
+	SeriesID         int     `json:"series_id"`
+	OccurrenceID     string  `json:"occurrence_id"`
+	ID               int     `json:"id"`
+	WorkspaceID      int     `json:"workspace_id"`
+	Title            string  `json:"title"`
+	Amount           float64 `json:"amount"`
+	EntryDate        string  `json:"entry_date"`
 	Recurrence       string  `json:"recurrence"`
 	IsRecurring      bool    `json:"is_recurring"`
 	SeriesAnchorDate string  `json:"series_anchor_date"`
 	Notes            string  `json:"notes"`
-	CreatedBy    int     `json:"created_by"`
+	CreatedBy        int     `json:"created_by"`
 }
 
 type billOccurrencePayload struct {
-	SeriesID     int     `json:"series_id"`
-	OccurrenceID string  `json:"occurrence_id"`
-	ID           int     `json:"id"`
-	WorkspaceID  int     `json:"workspace_id"`
-	Title        string  `json:"title"`
-	Amount       float64 `json:"amount"`
-	DueDate      string  `json:"due_date"`
-	Paid         bool    `json:"paid"`
-	PaidAt       *string `json:"paid_at"`
-	Skipped      bool    `json:"skipped"`
-	PaymentNotes string  `json:"payment_notes"`
+	SeriesID         int     `json:"series_id"`
+	OccurrenceID     string  `json:"occurrence_id"`
+	ID               int     `json:"id"`
+	WorkspaceID      int     `json:"workspace_id"`
+	Title            string  `json:"title"`
+	Amount           float64 `json:"amount"`
+	DueDate          string  `json:"due_date"`
+	Paid             bool    `json:"paid"`
+	PaidAt           *string `json:"paid_at"`
+	Skipped          bool    `json:"skipped"`
+	PaymentNotes     string  `json:"payment_notes"`
 	Recurrence       string  `json:"recurrence"`
 	IsRecurring      bool    `json:"is_recurring"`
 	SeriesAnchorDate string  `json:"series_anchor_date"`
 	Category         string  `json:"category"`
-	CreatedBy    int     `json:"created_by"`
+	CreatedBy        int     `json:"created_by"`
 }
 
 type expensePayload struct {
@@ -70,15 +71,15 @@ type expensePayload struct {
 }
 
 type expensePatchRequest struct {
-	Title        string   `json:"title"`
-	Amount       float64  `json:"amount"`
-	Date         string   `json:"date"`
-	Category     string   `json:"category"`
-	Notes        string   `json:"notes"`
-	Paid         *bool    `json:"paid"`
-	PaidAt       *string  `json:"paid_at"`
-	Skipped      *bool    `json:"skipped"`
-	PaymentNotes *string  `json:"payment_notes"`
+	Title        string  `json:"title"`
+	Amount       float64 `json:"amount"`
+	Date         string  `json:"date"`
+	Category     string  `json:"category"`
+	Notes        string  `json:"notes"`
+	Paid         *bool   `json:"paid"`
+	PaidAt       *string `json:"paid_at"`
+	Skipped      *bool   `json:"skipped"`
+	PaymentNotes *string `json:"payment_notes"`
 }
 
 type expenseSeriesRow struct {
@@ -107,17 +108,18 @@ type financeEntryRequest struct {
 }
 
 type financeOccurrencePatchRequest struct {
-	Scope      string   `json:"scope" binding:"required"`
-	Title      string   `json:"title"`
-	Amount     *float64 `json:"amount"`
-	Date       string   `json:"date"`
-	Recurrence string   `json:"recurrence"`
-	Category   string   `json:"category"`
-	Notes      string   `json:"notes"`
-	Paid       *bool    `json:"paid"`
-	PaidAt     *string  `json:"paid_at"`
-	Skipped    *bool    `json:"skipped"`
-	PaymentNotes string `json:"payment_notes"`
+	Scope        string   `json:"scope" binding:"required"`
+	Title        string   `json:"title"`
+	Amount       *float64 `json:"amount"`
+	Date         string   `json:"date"`
+	Recurrence   string   `json:"recurrence"`
+	Category     string   `json:"category"`
+	Notes        string   `json:"notes"`
+	Paid         *bool    `json:"paid"`
+	PaidOff      *bool    `json:"paid_off"`
+	PaidAt       *string  `json:"paid_at"`
+	Skipped      *bool    `json:"skipped"`
+	PaymentNotes string   `json:"payment_notes"`
 }
 
 type incomeSeriesRow struct {
@@ -132,17 +134,36 @@ type incomeSeriesRow struct {
 }
 
 type billSeriesRow struct {
-	ID          int
-	WorkspaceID int
-	Title       string
-	Amount      float64
-	DueDate     time.Time
-	Paid        bool
-	Skipped     bool
+	ID           int
+	WorkspaceID  int
+	Title        string
+	Amount       float64
+	DueDate      time.Time
+	Paid         bool
+	PaidOff      bool
+	Skipped      bool
 	PaymentNotes string
-	Recurrence  string
-	Category    string
-	CreatedBy   int
+	Recurrence   string
+	Category     string
+	CreatedBy    int
+}
+
+type billSeriesPayload struct {
+	ID               int     `json:"id"`
+	WorkspaceID      int     `json:"workspace_id"`
+	Title            string  `json:"title"`
+	Amount           float64 `json:"amount"`
+	DueDate          string  `json:"due_date"`
+	Paid             bool    `json:"paid"`
+	PaidOff          bool    `json:"paid_off"`
+	Skipped          bool    `json:"skipped"`
+	PaymentNotes     string  `json:"payment_notes"`
+	Recurrence       string  `json:"recurrence"`
+	IsRecurring      bool    `json:"is_recurring"`
+	SeriesAnchorDate string  `json:"series_anchor_date"`
+	Category         string  `json:"category"`
+	CreatedBy        int     `json:"created_by"`
+	LastPaidAt       *string `json:"last_paid_at"`
 }
 
 func (h *FinanceHandler) ListIncome(c *gin.Context) {
@@ -212,10 +233,10 @@ func (h *FinanceHandler) ListIncome(c *gin.Context) {
 			items = append(items, incomeOccurrencePayload{
 				SeriesID: row.ID, OccurrenceID: recurrence.OccurrenceID(row.ID, at, true),
 				ID: row.ID, WorkspaceID: row.WorkspaceID, Title: title, Amount: amount,
-				EntryDate: occurrenceAt.Format("2006-01-02"),
+				EntryDate:  occurrenceAt.Format("2006-01-02"),
 				Recurrence: recurrence.NormalizeRule(row.Recurrence), IsRecurring: recurrence.IsRecurring(row.Recurrence),
 				SeriesAnchorDate: row.EntryDate.Format("2006-01-02"),
-				Notes: notes, CreatedBy: row.CreatedBy,
+				Notes:            notes, CreatedBy: row.CreatedBy,
 			})
 		}
 	}
@@ -224,6 +245,9 @@ func (h *FinanceHandler) ListIncome(c *gin.Context) {
 }
 
 func (h *FinanceHandler) CreateIncome(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -251,7 +275,7 @@ func (h *FinanceHandler) CreateIncome(c *gin.Context) {
 		ID: int(id64), WorkspaceID: workspaceID.(int), Title: req.Title, Amount: req.Amount,
 		EntryDate: req.Date, Recurrence: rrule, IsRecurring: recurrence.IsRecurring(rrule),
 		SeriesAnchorDate: req.Date,
-		Notes: req.Notes, CreatedBy: userID.(int),
+		Notes:            req.Notes, CreatedBy: userID.(int),
 	}
 	h.broadcastFinance(workspaceID.(int), "income", "created", item)
 	c.JSON(http.StatusCreated, item)
@@ -266,7 +290,7 @@ func (h *FinanceHandler) ListBills(c *gin.Context) {
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT id, workspace_id, title, amount, due_date, paid, COALESCE(skipped, FALSE), COALESCE(payment_notes, ''), COALESCE(recurrence, ''), category, created_by
+		SELECT id, workspace_id, title, amount, due_date, paid, COALESCE(paid_off, FALSE), COALESCE(skipped, FALSE), COALESCE(payment_notes, ''), COALESCE(recurrence, ''), category, created_by
 		FROM bills WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load bills"})
@@ -290,11 +314,15 @@ func (h *FinanceHandler) ListBills(c *gin.Context) {
 	for rows.Next() {
 		var row billSeriesRow
 		if err := rows.Scan(
-			&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.DueDate, &row.Paid, &row.Skipped,
+			&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.DueDate, &row.Paid, &row.PaidOff, &row.Skipped,
 			&row.PaymentNotes, &row.Recurrence, &row.Category, &row.CreatedBy,
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read bill"})
 			return
+		}
+
+		if row.PaidOff {
+			continue
 		}
 
 		series := recurrence.Series{
@@ -357,9 +385,9 @@ func (h *FinanceHandler) ListBills(c *gin.Context) {
 				ID: row.ID, WorkspaceID: row.WorkspaceID, Title: title, Amount: amount,
 				DueDate: occurrenceAt.Format("2006-01-02"), Paid: paid, PaidAt: paidAt, Skipped: skipped,
 				PaymentNotes: paymentNotes,
-				Recurrence: recurrence.NormalizeRule(row.Recurrence), IsRecurring: recurrence.IsRecurring(row.Recurrence),
+				Recurrence:   recurrence.NormalizeRule(row.Recurrence), IsRecurring: recurrence.IsRecurring(row.Recurrence),
 				SeriesAnchorDate: row.DueDate.Format("2006-01-02"),
-				Category: category, CreatedBy: row.CreatedBy,
+				Category:         category, CreatedBy: row.CreatedBy,
 			})
 		}
 	}
@@ -367,7 +395,69 @@ func (h *FinanceHandler) ListBills(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"bills": items})
 }
 
+func (h *FinanceHandler) ListBillSeries(c *gin.Context) {
+	workspaceID, _ := c.Get("workspaceID")
+	status := strings.ToLower(strings.TrimSpace(c.DefaultQuery("status", "active")))
+
+	query := `
+		SELECT b.id, b.workspace_id, b.title, b.amount, b.due_date, b.paid, COALESCE(b.paid_off, FALSE), COALESCE(b.skipped, FALSE), COALESCE(b.payment_notes, ''), COALESCE(b.recurrence, ''), b.category, b.created_by, b.paid_at,
+			(
+				SELECT MAX(ros.paid_at)
+				FROM recurrence_occurrence_states ros
+				WHERE ros.entity_type = 'bill'
+					AND ros.series_id = b.id
+					AND ros.workspace_id = b.workspace_id
+					AND ros.paid = TRUE
+					AND COALESCE(ros.skipped, FALSE) = FALSE
+					AND ros.paid_at IS NOT NULL
+			) AS occurrence_last_paid
+		FROM bills b
+		WHERE b.workspace_id = ?`
+	switch status {
+	case "paid_off":
+		query += " AND COALESCE(paid_off, FALSE) = TRUE"
+	case "all":
+	default:
+		query += " AND COALESCE(paid_off, FALSE) = FALSE"
+	}
+	query += " ORDER BY due_date DESC, title ASC"
+
+	rows, err := h.DB.Query(query, workspaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load bill series"})
+		return
+	}
+	defer rows.Close()
+
+	items := []billSeriesPayload{}
+	for rows.Next() {
+		var row billSeriesRow
+		var billPaidAt sql.NullTime
+		var occurrenceLastPaid sql.NullTime
+		if err := rows.Scan(
+			&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.DueDate, &row.Paid, &row.PaidOff, &row.Skipped,
+			&row.PaymentNotes, &row.Recurrence, &row.Category, &row.CreatedBy, &billPaidAt, &occurrenceLastPaid,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read bill series"})
+			return
+		}
+		rule := recurrence.NormalizeRule(row.Recurrence)
+		items = append(items, billSeriesPayload{
+			ID: row.ID, WorkspaceID: row.WorkspaceID, Title: row.Title, Amount: row.Amount,
+			DueDate: row.DueDate.Format("2006-01-02"), Paid: row.Paid, PaidOff: row.PaidOff, Skipped: row.Skipped,
+			PaymentNotes: row.PaymentNotes, Recurrence: rule, IsRecurring: recurrence.IsRecurring(rule),
+			SeriesAnchorDate: row.DueDate.Format("2006-01-02"), Category: row.Category, CreatedBy: row.CreatedBy,
+			LastPaidAt: latestPaidDate(billPaidAt, occurrenceLastPaid),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"bills": items})
+}
+
 func (h *FinanceHandler) CreateBill(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -401,13 +491,16 @@ func (h *FinanceHandler) CreateBill(c *gin.Context) {
 		ID: int(id64), WorkspaceID: workspaceID.(int), Title: req.Title, Amount: req.Amount,
 		DueDate: req.Date, Paid: paid, Recurrence: rrule, IsRecurring: recurrence.IsRecurring(rrule),
 		SeriesAnchorDate: req.Date,
-		Category: defaultString(req.Category, "general"), CreatedBy: userID.(int),
+		Category:         defaultString(req.Category, "general"), CreatedBy: userID.(int),
 	}
 	h.broadcastFinance(workspaceID.(int), "bill", "created", item)
 	c.JSON(http.StatusCreated, item)
 }
 
 func (h *FinanceHandler) PatchBillOccurrence(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	billID := c.Param("billId")
 	occurrenceRaw := c.Param("occurrenceAt")
@@ -507,6 +600,10 @@ func (h *FinanceHandler) PatchBillOccurrence(c *gin.Context) {
 		if req.Paid != nil {
 			paid = *req.Paid
 		}
+		paidOff := row.PaidOff
+		if req.PaidOff != nil {
+			paidOff = *req.PaidOff
+		}
 		skipped := row.Skipped
 		if req.Skipped != nil {
 			skipped = *req.Skipped
@@ -531,9 +628,9 @@ func (h *FinanceHandler) PatchBillOccurrence(c *gin.Context) {
 			rrule = recurrence.NormalizeRule(req.Recurrence)
 		}
 		_, err = h.DB.Exec(`
-			UPDATE bills SET title = ?, amount = ?, due_date = ?, paid = ?, paid_at = ?, skipped = ?, payment_notes = ?, recurrence = ?, category = ?
+			UPDATE bills SET title = ?, amount = ?, due_date = ?, paid = ?, paid_at = ?, paid_off = ?, skipped = ?, payment_notes = ?, recurrence = ?, category = ?
 			WHERE id = ? AND workspace_id = ?`,
-			title, amount, dueDate, paid, paidAt, skipped, nullableString(paymentNotes), nullableString(rrule), category, row.ID, workspaceID,
+			title, amount, dueDate, paid, paidAt, paidOff, skipped, nullableString(paymentNotes), nullableString(rrule), category, row.ID, workspaceID,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update bill series"})
@@ -589,6 +686,9 @@ func (h *FinanceHandler) PatchBillOccurrence(c *gin.Context) {
 }
 
 func (h *FinanceHandler) PatchIncomeOccurrence(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	incomeID := c.Param("incomeId")
 	occurrenceRaw := c.Param("occurrenceAt")
@@ -711,6 +811,9 @@ func (h *FinanceHandler) DeleteBill(c *gin.Context) {
 }
 
 func (h *FinanceHandler) deleteFinanceSeries(c *gin.Context, entityType, table, paramName, broadcastEntity string) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	seriesID := c.Param(paramName)
 	scope := defaultString(c.Query("scope"), "all")
@@ -792,6 +895,9 @@ func (h *FinanceHandler) deleteFinanceSeries(c *gin.Context, entityType, table, 
 }
 
 func (h *FinanceHandler) PatchExpense(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	expenseID := c.Param("expenseId")
 
@@ -872,6 +978,9 @@ func (h *FinanceHandler) PatchExpense(c *gin.Context) {
 }
 
 func (h *FinanceHandler) DeleteExpense(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	expenseID := c.Param("expenseId")
 
@@ -923,6 +1032,9 @@ func (h *FinanceHandler) ListExpenses(c *gin.Context) {
 }
 
 func (h *FinanceHandler) CreateExpense(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaFinances) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -1010,7 +1122,7 @@ func (h *FinanceHandler) sumExpandedIncome(workspaceID int, from, to time.Time) 
 
 func (h *FinanceHandler) sumExpandedBills(workspaceID int, from, to time.Time) float64 {
 	rows, err := h.DB.Query(`
-		SELECT id, amount, due_date, paid, COALESCE(skipped, FALSE), COALESCE(recurrence, '')
+		SELECT id, amount, due_date, paid, COALESCE(paid_off, FALSE), COALESCE(skipped, FALSE), COALESCE(recurrence, '')
 		FROM bills WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		return 0
@@ -1027,9 +1139,13 @@ func (h *FinanceHandler) sumExpandedBills(workspaceID int, from, to time.Time) f
 		var amount float64
 		var dueDate time.Time
 		var paid bool
+		var paidOff bool
 		var skipped bool
 		var rule string
-		if err := rows.Scan(&id, &amount, &dueDate, &paid, &skipped, &rule); err != nil {
+		if err := rows.Scan(&id, &amount, &dueDate, &paid, &paidOff, &skipped, &rule); err != nil {
+			continue
+		}
+		if paidOff {
 			continue
 		}
 		series := recurrence.Series{ID: id, StartAt: dueDate, RRule: rule, DateOnly: true}
@@ -1057,7 +1173,7 @@ func (h *FinanceHandler) sumExpandedBills(workspaceID int, from, to time.Time) f
 
 func (h *FinanceHandler) sumExpandedUnpaidBills(workspaceID int, from, to time.Time) float64 {
 	rows, err := h.DB.Query(`
-		SELECT id, amount, due_date, paid, COALESCE(skipped, FALSE), COALESCE(recurrence, '')
+		SELECT id, amount, due_date, paid, COALESCE(paid_off, FALSE), COALESCE(skipped, FALSE), COALESCE(recurrence, '')
 		FROM bills WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		return 0
@@ -1074,9 +1190,13 @@ func (h *FinanceHandler) sumExpandedUnpaidBills(workspaceID int, from, to time.T
 		var amount float64
 		var dueDate time.Time
 		var paid bool
+		var paidOff bool
 		var skipped bool
 		var rule string
-		if err := rows.Scan(&id, &amount, &dueDate, &paid, &skipped, &rule); err != nil {
+		if err := rows.Scan(&id, &amount, &dueDate, &paid, &paidOff, &skipped, &rule); err != nil {
+			continue
+		}
+		if paidOff {
 			continue
 		}
 		series := recurrence.Series{ID: id, StartAt: dueDate, RRule: rule, DateOnly: true}
@@ -1119,9 +1239,9 @@ func (h *FinanceHandler) loadExpenseRow(workspaceID int, expenseID string) (expe
 func (h *FinanceHandler) loadBillSeries(workspaceID int, billID string) (billSeriesRow, error) {
 	var row billSeriesRow
 	err := h.DB.QueryRow(`
-		SELECT id, workspace_id, title, amount, due_date, paid, COALESCE(skipped, FALSE), COALESCE(payment_notes, ''), COALESCE(recurrence, ''), category, created_by
+		SELECT id, workspace_id, title, amount, due_date, paid, COALESCE(paid_off, FALSE), COALESCE(skipped, FALSE), COALESCE(payment_notes, ''), COALESCE(recurrence, ''), category, created_by
 		FROM bills WHERE id = ? AND workspace_id = ?`, billID, workspaceID,
-	).Scan(&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.DueDate, &row.Paid, &row.Skipped, &row.PaymentNotes, &row.Recurrence, &row.Category, &row.CreatedBy)
+	).Scan(&row.ID, &row.WorkspaceID, &row.Title, &row.Amount, &row.DueDate, &row.Paid, &row.PaidOff, &row.Skipped, &row.PaymentNotes, &row.Recurrence, &row.Category, &row.CreatedBy)
 	return row, err
 }
 
@@ -1150,6 +1270,25 @@ func resolvePaidAt(value *string) string {
 		return strings.TrimSpace(*value)
 	}
 	return time.Now().UTC().Format("2006-01-02")
+}
+
+func latestPaidDate(dates ...sql.NullTime) *string {
+	var latest *time.Time
+	for _, date := range dates {
+		if !date.Valid {
+			continue
+		}
+		t := date.Time
+		if latest == nil || t.After(*latest) {
+			copy := t
+			latest = &copy
+		}
+	}
+	if latest == nil {
+		return nil
+	}
+	formatted := latest.Format("2006-01-02")
+	return &formatted
 }
 
 func optionalPaymentNotes(value string) *string {

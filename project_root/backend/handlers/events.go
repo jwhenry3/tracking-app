@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fullstack-app/hub"
+	"fullstack-app/middleware"
 	"fullstack-app/recurrence"
 
 	"github.com/gin-gonic/gin"
@@ -20,20 +21,20 @@ type EventHandler struct {
 }
 
 type eventOccurrencePayload struct {
-	SeriesID     int       `json:"series_id"`
-	OccurrenceID string    `json:"occurrence_id"`
-	ID           int       `json:"id"`
-	WorkspaceID  int       `json:"workspace_id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	StartAt      time.Time `json:"start_at"`
-	EndAt        time.Time `json:"end_at"`
-	AllDay       bool      `json:"all_day"`
-	Color        string    `json:"color"`
-	Recurrence        string    `json:"recurrence"`
-	IsRecurring       bool      `json:"is_recurring"`
-	SeriesAnchorDate  string    `json:"series_anchor_date"`
-	CreatedBy         int       `json:"created_by"`
+	SeriesID         int       `json:"series_id"`
+	OccurrenceID     string    `json:"occurrence_id"`
+	ID               int       `json:"id"`
+	WorkspaceID      int       `json:"workspace_id"`
+	Title            string    `json:"title"`
+	Description      string    `json:"description"`
+	StartAt          time.Time `json:"start_at"`
+	EndAt            time.Time `json:"end_at"`
+	AllDay           bool      `json:"all_day"`
+	Color            string    `json:"color"`
+	Recurrence       string    `json:"recurrence"`
+	IsRecurring      bool      `json:"is_recurring"`
+	SeriesAnchorDate string    `json:"series_anchor_date"`
+	CreatedBy        int       `json:"created_by"`
 }
 
 type upsertEventRequest struct {
@@ -150,7 +151,7 @@ func (h *EventHandler) List(c *gin.Context) {
 				StartAt: startAt, EndAt: endAt, AllDay: allDay, Color: color,
 				Recurrence: recurrence.NormalizeRule(row.RRule), IsRecurring: recurrence.IsRecurring(row.RRule),
 				SeriesAnchorDate: row.StartAt.Format("2006-01-02"),
-				CreatedBy: row.CreatedBy,
+				CreatedBy:        row.CreatedBy,
 			})
 		}
 	}
@@ -158,7 +159,61 @@ func (h *EventHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"events": events})
 }
 
+type eventSeriesPayload struct {
+	ID               int    `json:"id"`
+	WorkspaceID      int    `json:"workspace_id"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	StartAt          string `json:"start_at"`
+	EndAt            string `json:"end_at"`
+	AllDay           bool   `json:"all_day"`
+	Color            string `json:"color"`
+	Recurrence       string `json:"recurrence"`
+	IsRecurring      bool   `json:"is_recurring"`
+	SeriesAnchorDate string `json:"series_anchor_date"`
+	CreatedBy        int    `json:"created_by"`
+}
+
+func (h *EventHandler) ListSeries(c *gin.Context) {
+	workspaceID, _ := c.Get("workspaceID")
+
+	rows, err := h.DB.Query(`
+		SELECT id, workspace_id, title, description, start_at, end_at, all_day, color, COALESCE(rrule, ''), created_by
+		FROM events WHERE workspace_id = ?
+		ORDER BY start_at DESC, title ASC`, workspaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load event series"})
+		return
+	}
+	defer rows.Close()
+
+	items := []eventSeriesPayload{}
+	for rows.Next() {
+		var row eventSeriesRow
+		if err := rows.Scan(
+			&row.ID, &row.WorkspaceID, &row.Title, &row.Description,
+			&row.StartAt, &row.EndAt, &row.AllDay, &row.Color, &row.RRule, &row.CreatedBy,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read event series"})
+			return
+		}
+		rule := recurrence.NormalizeRule(row.RRule)
+		items = append(items, eventSeriesPayload{
+			ID: row.ID, WorkspaceID: row.WorkspaceID, Title: row.Title, Description: row.Description,
+			StartAt: row.StartAt.UTC().Format(time.RFC3339), EndAt: row.EndAt.UTC().Format(time.RFC3339),
+			AllDay: row.AllDay, Color: row.Color, Recurrence: rule, IsRecurring: recurrence.IsRecurring(rule),
+			SeriesAnchorDate: row.StartAt.UTC().Format("2006-01-02"), CreatedBy: row.CreatedBy,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"events": items})
+}
+
 func (h *EventHandler) Create(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -197,7 +252,7 @@ func (h *EventHandler) Create(c *gin.Context) {
 		StartAt: startAt, EndAt: endAt, AllDay: req.AllDay, Color: color,
 		Recurrence: rrule, IsRecurring: recurrence.IsRecurring(rrule),
 		SeriesAnchorDate: startAt.Format("2006-01-02"),
-		CreatedBy: userID.(int),
+		CreatedBy:        userID.(int),
 	}
 
 	h.broadcastEntity(workspaceID.(int), "event", "created", event)
@@ -205,6 +260,10 @@ func (h *EventHandler) Create(c *gin.Context) {
 }
 
 func (h *EventHandler) Delete(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+
 	workspaceID, _ := c.Get("workspaceID")
 	eventID := c.Param("eventId")
 	scope := defaultString(c.Query("scope"), "all")
@@ -261,6 +320,10 @@ func (h *EventHandler) Delete(c *gin.Context) {
 }
 
 func (h *EventHandler) PatchOccurrence(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+
 	workspaceID, _ := c.Get("workspaceID")
 	eventID := c.Param("eventId")
 	occurrenceRaw := c.Param("occurrenceAt")

@@ -1,4 +1,5 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { type FormEvent, useMemo, useState } from 'react'
 import { Plus, Wallet } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
@@ -12,22 +13,25 @@ import { defaultRecurrenceConfig, RecurrencePicker } from '@/components/forms/Re
 import { OperationDialog, OpsTabs } from '@/components/layout/OperationDialog'
 import { PageHeader, PageHeaderIconButton } from '@/components/layout/PageHeader'
 import { EditEntryForm, type EditableEntry } from '@/components/ops/EditEntryForm'
+import { entryTypeMeta } from '@/components/ops/EntryTypeIcon'
 import { Button } from '@/components/ui/button'
 import {
   createBill,
   createExpense,
   createIncome,
-  fetchBills,
-  fetchExpenses,
-  fetchFinanceSummary,
-  fetchIncome,
 } from '@/lib/api'
 import { extendedFinanceRange, monthRange } from '@/lib/financeUtils'
+import { invalidatePlannerFinance } from '@/lib/queries/invalidate'
+import {
+  useBillsQuery,
+  useExpensesQuery,
+  useFinanceSummaryQuery,
+  useIncomeQuery,
+} from '@/lib/queries/hooks'
 import { buildRecurrenceRule } from '@/lib/recurrence'
-import type { Bill, Expense, FinanceSummary, IncomeEntry } from '@/lib/types'
-
+import type { Bill, Expense } from '@/lib/types'
+import { useWorkspacePermissions } from '@/lib/workspacePermissions'
 import { useAuthStore } from '@/stores/authStore'
-import { useRealtimeStore } from '@/stores/realtimeStore'
 
 type FinanceFormTab = 'income' | 'bill' | 'expense'
 type FinancePageView = 'runway' | 'timeline' | 'analytics'
@@ -35,14 +39,45 @@ type FinancePageView = 'runway' | 'timeline' | 'analytics'
 export function FinancesView({ view: pageView }: { view: FinancePageView }) {
   const { workspaceId } = useParams()
   const token = useAuthStore((s) => s.token)
-  const setOnUpdate = useRealtimeStore((s) => s.setOnUpdate)
+  const { canManageFinances } = useWorkspacePermissions()
+  const queryClient = useQueryClient()
+  const workspaceNumericId = workspaceId ? Number(workspaceId) : null
+  const queriesEnabled = Boolean(token && workspaceNumericId)
   const currentMonth = useMemo(() => monthRange(), [])
   const extendedRange = useMemo(() => extendedFinanceRange(), [])
 
-  const [summary, setSummary] = useState<FinanceSummary | null>(null)
-  const [income, setIncome] = useState<IncomeEntry[]>([])
-  const [bills, setBills] = useState<Bill[]>([])
-  const [expenses, setExpenses] = useState<Expense[]>([])
+  const summaryQuery = useFinanceSummaryQuery(
+    workspaceNumericId,
+    currentMonth.start,
+    currentMonth.end,
+    queriesEnabled,
+  )
+  const incomeQuery = useIncomeQuery(
+    workspaceNumericId,
+    extendedRange.start,
+    extendedRange.end,
+    queriesEnabled,
+  )
+  const billsQuery = useBillsQuery(
+    workspaceNumericId,
+    extendedRange.start,
+    extendedRange.end,
+    queriesEnabled,
+  )
+  const expensesQuery = useExpensesQuery(workspaceNumericId, queriesEnabled)
+
+  const summary = summaryQuery.data ?? null
+  const income = incomeQuery.data ?? []
+  const bills = billsQuery.data ?? []
+  const expenses = expensesQuery.data ?? []
+
+  function refreshFinance() {
+    if (!workspaceNumericId) return
+    void invalidatePlannerFinance(queryClient, workspaceNumericId)
+    void queryClient.invalidateQueries({
+      queryKey: ['finance-summary', workspaceNumericId],
+    })
+  }
   const [formTab, setFormTab] = useState<FinanceFormTab>('income')
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -70,32 +105,6 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
     date: new Date().toISOString().slice(0, 10),
     category: 'general',
   })
-
-  async function loadAll() {
-    if (!token || !workspaceId) return
-    const id = Number(workspaceId)
-    const [summaryData, incomeData, billsData, expensesData] = await Promise.all([
-      fetchFinanceSummary(token, id, currentMonth.start, currentMonth.end),
-      fetchIncome(token, id, extendedRange.start, extendedRange.end),
-      fetchBills(token, id, extendedRange.start, extendedRange.end),
-      fetchExpenses(token, id),
-    ])
-    setSummary(summaryData)
-    setIncome(incomeData.income)
-    setBills(billsData.bills)
-    setExpenses(expensesData.expenses)
-  }
-
-  useEffect(() => {
-    void loadAll()
-  }, [token, workspaceId])
-
-  useEffect(() => {
-    setOnUpdate(() => {
-      void loadAll()
-    })
-    return () => setOnUpdate(null)
-  }, [token, workspaceId])
 
   function closeDialog() {
     setDialogOpen(false)
@@ -133,7 +142,7 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
       recurrence: buildRecurrenceRule(incomeForm.recurrence, incomeForm.date),
     })
     setIncomeForm({ title: '', amount: '', date: incomeForm.date, recurrence: defaultRecurrenceConfig })
-    await loadAll()
+    await refreshFinance()
     closeDialog()
   }
 
@@ -154,7 +163,7 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
       category: billForm.category,
       recurrence: defaultRecurrenceConfig,
     })
-    await loadAll()
+    await refreshFinance()
     closeDialog()
   }
 
@@ -168,7 +177,7 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
       category: expenseForm.category,
     })
     setExpenseForm({ title: '', amount: '', date: expenseForm.date, category: expenseForm.category })
-    await loadAll()
+    await refreshFinance()
     closeDialog()
   }
 
@@ -177,18 +186,20 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
   }
 
   return (
-    <>
-      <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <PageHeader
           icon={Wallet}
           title="Finances"
           subtitle="Plan between paychecks, review the month, and track trends"
         >
+          {canManageFinances ? (
           <PageHeaderIconButton icon={Plus} label="Add entry" onClick={() => startAdd('income')} />
+          ) : null}
         </PageHeader>
       </div>
 
-      <div className="space-y-6 p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto space-y-6 p-4">
         {pageView === 'runway' ? (
           <UntilNextIncomeView
             income={income}
@@ -240,11 +251,11 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
             workspaceId={Number(workspaceId)}
             entry={editEntry}
             onSaved={() => {
-              void loadAll()
+              refreshFinance()
               closeDialog()
             }}
             onDeleted={() => {
-              void loadAll()
+              refreshFinance()
               closeDialog()
             }}
           />
@@ -252,9 +263,9 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
           <>
             <OpsTabs
               tabs={[
-                { id: 'income', label: 'Income' },
-                { id: 'bill', label: 'Bill' },
-                { id: 'expense', label: 'Expense' },
+                { id: 'income', label: 'Income', icon: entryTypeMeta.income.icon },
+                { id: 'bill', label: 'Bill', icon: entryTypeMeta.bill.icon },
+                { id: 'expense', label: 'Expense', icon: entryTypeMeta.expense.icon },
               ]}
               activeTab={formTab}
               onChange={(tabId) => setFormTab(tabId as FinanceFormTab)}
@@ -301,7 +312,7 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
         token={token}
         workspaceId={Number(workspaceId)}
         bill={payBill}
-        onComplete={() => void loadAll()}
+        onComplete={() => refreshFinance()}
       />
 
       <PayExpenseDialog
@@ -313,8 +324,8 @@ export function FinancesView({ view: pageView }: { view: FinancePageView }) {
         token={token}
         workspaceId={Number(workspaceId)}
         expense={payExpense}
-        onComplete={() => void loadAll()}
+        onComplete={() => refreshFinance()}
       />
-    </>
+    </div>
   )
 }

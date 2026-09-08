@@ -1,147 +1,129 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Plus } from 'lucide-react'
+import { type FormEvent, useState } from 'react'
 
-import { FormField } from '@/components/forms/FormField'
+import { DayNotesEditor } from '@/components/notes/DayNotesEditor'
+import { InlineCheckListItem } from '@/components/planner/InlineCheckListItem'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  createNote,
-  createTodo,
-  ensureDailyList,
-  fetchNotes,
-  fetchTodos,
-} from '@/lib/api'
-import type { Note, Todo } from '@/lib/types'
+import { createTodo } from '@/lib/api'
+import { invalidatePlannerDay } from '@/lib/queries/invalidate'
+import { usePlannerDayQuery } from '@/lib/queries/hooks'
 import { cn } from '@/lib/utils'
+import { useWorkspacePermissions } from '@/lib/workspacePermissions'
+
+type PlannerDayItemsSection = 'checklists' | 'notes' | 'all'
 
 type PlannerDayItemsProps = {
   token: string
   workspaceId: number
   date: string
-  reloadKey?: number
+  showCheckLists?: boolean
+  section?: PlannerDayItemsSection
 }
 
-export function PlannerDayItems({ token, workspaceId, date, reloadKey = 0 }: PlannerDayItemsProps) {
-  const [dailyListId, setDailyListId] = useState<number | null>(null)
-  const [todos, setTodos] = useState<Todo[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
-  const [todoTitle, setTodoTitle] = useState('')
-  const [noteTitle, setNoteTitle] = useState('')
-  const [noteContent, setNoteContent] = useState('')
-  const [loading, setLoading] = useState(true)
+export function PlannerDayItems({
+  token,
+  workspaceId,
+  date,
+  showCheckLists = true,
+  section = 'all',
+}: PlannerDayItemsProps) {
+  const queryClient = useQueryClient()
+  const { canManagePlanning } = useWorkspacePermissions()
+  const [itemTitle, setItemTitle] = useState('')
+  const dayQuery = usePlannerDayQuery(workspaceId, date)
 
-  async function loadDayItems() {
-    setLoading(true)
-    try {
-      const daily = await ensureDailyList(token, workspaceId, date)
-      setDailyListId(daily.list_id)
+  const dailyListId = dayQuery.data?.dailyListId ?? null
+  const items = dayQuery.data?.items ?? []
+  const notes = dayQuery.data?.notes ?? []
+  const primaryNote = notes[0] ?? null
 
-      const [todoData, noteData] = await Promise.all([
-        fetchTodos(token, workspaceId, daily.list_id),
-        fetchNotes(token, workspaceId, daily.list_id),
-      ])
-      setTodos(todoData.todos)
-      setNotes(noteData.notes)
-    } finally {
-      setLoading(false)
-    }
+  async function refreshDayItems() {
+    await invalidatePlannerDay(queryClient, workspaceId, date)
   }
 
-  useEffect(() => {
-    void loadDayItems()
-  }, [token, workspaceId, date, reloadKey])
-
-  async function handleCreateTodo(event: FormEvent) {
+  async function handleCreateItem(event: FormEvent) {
     event.preventDefault()
-    if (!dailyListId || !todoTitle.trim()) return
-    await createTodo(token, workspaceId, { list_id: dailyListId, title: todoTitle.trim() })
-    setTodoTitle('')
-    await loadDayItems()
+    if (!dailyListId || !itemTitle.trim()) return
+    await createTodo(token, workspaceId, { list_id: dailyListId, title: itemTitle.trim() })
+    setItemTitle('')
+    await refreshDayItems()
   }
 
-  async function handleCreateNote(event: FormEvent) {
-    event.preventDefault()
-    if (!dailyListId || !noteTitle.trim()) return
-    await createNote(token, workspaceId, {
-      title: noteTitle.trim(),
-      content: noteContent,
-      list_id: dailyListId,
-    })
-    setNoteTitle('')
-    setNoteContent('')
-    await loadDayItems()
-  }
-
-  if (loading && dailyListId === null) {
+  if (dayQuery.isLoading && dailyListId === null) {
     return <p className="text-sm text-muted-foreground">Loading lists…</p>
   }
 
-  return (
-    <div className="space-y-4 border-t pt-4">
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Todos</p>
-        <div className="space-y-2">
-          {todos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No todos for this day.</p>
-          ) : (
-            todos.map((todo) => (
-              <div key={todo.id} className="flex items-center gap-3 rounded-lg border p-2.5 text-sm">
-                <input type="checkbox" checked={todo.completed} disabled className="opacity-70" />
-                <span className={cn(todo.completed && 'text-muted-foreground line-through')}>{todo.title}</span>
-              </div>
-            ))
-          )}
-          <form onSubmit={(event) => void handleCreateTodo(event)}>
-            <div className="flex gap-2">
-              <Input
-                id={`todo-title-${date}`}
-                value={todoTitle}
-                onChange={(event) => setTodoTitle(event.target.value)}
-                placeholder="Add a todo"
-                className="flex-1"
-              />
-              <Button type="submit" size="sm" className="shrink-0" disabled={!dailyListId || !todoTitle.trim()}>
-                Add todo
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
+  const showCheckListSection = section !== 'notes'
+  const showNotesSection = section !== 'checklists'
 
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
-        <div className="space-y-2">
-          {notes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No notes for this day.</p>
-          ) : (
-            notes.map((note) => (
-              <div key={note.id} className="rounded-lg border p-2.5">
-                <p className="text-sm font-medium">{note.title}</p>
-                {note.content ? (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{note.content}</p>
-                ) : null}
-              </div>
-            ))
-          )}
-          <form className="space-y-3 rounded-lg border bg-muted/30 p-3" onSubmit={(event) => void handleCreateNote(event)}>
-            <FormField label="Note title" value={noteTitle} onChange={setNoteTitle} id={`note-title-${date}`} />
-            <div className="space-y-2">
-              <Label htmlFor={`note-content-${date}`}>Content</Label>
-              <Textarea
-                id={`note-content-${date}`}
-                value={noteContent}
-                onChange={(event) => setNoteContent(event.target.value)}
-                placeholder="Add a note"
-                rows={3}
-              />
+  return (
+    <div className={cn(section === 'all' ? 'space-y-3 pt-2' : 'space-y-2')}>
+      {showCheckListSection ? (
+        showCheckLists ? (
+          <div>
+            {section === 'all' ? (
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Check list</p>
+            ) : null}
+            <div className="space-y-0.5">
+              {items.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No items for this day.</p>
+              ) : (
+                items.map((item) => (
+                  <InlineCheckListItem
+                    key={item.id}
+                    token={token}
+                    workspaceId={workspaceId}
+                    item={item}
+                    compact
+                    onChange={() => void refreshDayItems()}
+                  />
+                ))
+              )}
+              {canManagePlanning ? (
+              <form onSubmit={(event) => void handleCreateItem(event)}>
+                <div className="flex gap-1.5">
+                  <Input
+                    id={`checklist-item-${date}`}
+                    value={itemTitle}
+                    onChange={(event) => setItemTitle(event.target.value)}
+                    placeholder="Add a check list item"
+                    className="h-7 flex-1 text-sm"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 p-0"
+                    disabled={!dailyListId || !itemTitle.trim()}
+                    aria-label="Add check list item"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </form>
+              ) : null}
             </div>
-            <Button type="submit" size="sm" disabled={!dailyListId || !noteTitle.trim()}>
-              Save note
-            </Button>
-          </form>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Check list hidden for this day.</p>
+        )
+      ) : null}
+
+      {showNotesSection && dailyListId ? (
+        <div>
+          {section === 'all' ? (
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
+          ) : null}
+          <DayNotesEditor
+            token={token}
+            workspaceId={workspaceId}
+            listId={dailyListId}
+            note={primaryNote}
+            onSaved={() => void refreshDayItems()}
+          />
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }

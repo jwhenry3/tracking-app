@@ -1,11 +1,22 @@
 export type WorkspaceFocusArea = 'planning' | 'finances'
 
+export type User = {
+  id: number
+  username: string
+  email: string | null
+  display_name: string | null
+  avatar_url: string | null
+  settings: Record<string, unknown>
+  token?: string
+}
+
 export type Workspace = {
   id: number
   name: string
   slug: string
   role: string
   focus_areas: WorkspaceFocusArea[]
+  manage_areas: WorkspaceFocusArea[]
 }
 
 export type CreateWorkspaceResult = {
@@ -17,6 +28,7 @@ export type WorkspaceMember = {
   user_id: number
   username: string
   role: string
+  manage_areas: WorkspaceFocusArea[]
   joined_at: string
 }
 
@@ -48,6 +60,14 @@ export type ChatConversation = {
   members?: string[]
 }
 
+export type ChatAttachment = {
+  id: number
+  message_id: number
+  original_name: string
+  mime_type: string
+  size_bytes: number
+}
+
 export type ChatMessage = {
   id: number
   conversation_id: number
@@ -55,6 +75,7 @@ export type ChatMessage = {
   sender_username: string
   content: string
   created_at: string
+  attachments?: ChatAttachment[]
 }
 
 export type PlannerEvent = {
@@ -105,6 +126,40 @@ export type Bill = {
   is_recurring: boolean
   series_anchor_date?: string
   category: string
+  created_by: number
+  paid_off?: boolean
+}
+
+export type BillSeries = {
+  id: number
+  workspace_id: number
+  title: string
+  amount: number
+  due_date: string
+  paid: boolean
+  paid_off: boolean
+  skipped?: boolean
+  payment_notes?: string
+  recurrence: string
+  is_recurring: boolean
+  series_anchor_date?: string
+  category: string
+  created_by: number
+  last_paid_at?: string | null
+}
+
+export type EventSeries = {
+  id: number
+  workspace_id: number
+  title: string
+  description: string
+  start_at: string
+  end_at: string
+  all_day: boolean
+  color: string
+  recurrence: string
+  is_recurring: boolean
+  series_anchor_date?: string
   created_by: number
 }
 
@@ -163,7 +218,6 @@ export type NavSection =
   | 'calendar'
   | 'planner-daily'
   | 'planner-weekly'
-  | 'planner-monthly'
   | 'finances'
   | 'todos'
   | 'chat'

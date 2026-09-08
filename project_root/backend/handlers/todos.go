@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"fullstack-app/hub"
+	"fullstack-app/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -65,7 +66,12 @@ type updateTodoRequest struct {
 type createNoteRequest struct {
 	ListID  *int   `json:"list_id"`
 	Title   string `json:"title" binding:"required"`
-	Content string `json:"content" binding:"required"`
+	Content string `json:"content"`
+}
+
+type updateNoteRequest struct {
+	Title   *string `json:"title"`
+	Content *string `json:"content"`
 }
 
 func (h *TodoHandler) ListLists(c *gin.Context) {
@@ -108,6 +114,9 @@ func (h *TodoHandler) ListLists(c *gin.Context) {
 }
 
 func (h *TodoHandler) CreateList(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 
 	var req createListRequest
@@ -215,6 +224,9 @@ func (h *TodoHandler) ListTodos(c *gin.Context) {
 }
 
 func (h *TodoHandler) CreateTodo(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -251,6 +263,9 @@ func (h *TodoHandler) CreateTodo(c *gin.Context) {
 }
 
 func (h *TodoHandler) UpdateTodo(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	todoID := c.Param("todoId")
 
@@ -284,6 +299,32 @@ func (h *TodoHandler) UpdateTodo(c *gin.Context) {
 
 	h.broadcastTodo(workspaceID.(int), "todo", "updated", gin.H{"id": todoID})
 	c.JSON(http.StatusOK, gin.H{"message": "todo updated"})
+}
+
+func (h *TodoHandler) DeleteTodo(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+	workspaceID, _ := c.Get("workspaceID")
+	todoID := c.Param("todoId")
+
+	result, err := h.DB.Exec(
+		"DELETE FROM todos WHERE id = ? AND workspace_id = ?",
+		todoID, workspaceID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete todo"})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "todo not found"})
+		return
+	}
+
+	h.broadcastTodo(workspaceID.(int), "todo", "deleted", gin.H{"id": todoID})
+	c.JSON(http.StatusOK, gin.H{"message": "todo deleted"})
 }
 
 func (h *TodoHandler) ListNotes(c *gin.Context) {
@@ -329,6 +370,9 @@ func (h *TodoHandler) ListNotes(c *gin.Context) {
 }
 
 func (h *TodoHandler) CreateNote(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
 	workspaceID, _ := c.Get("workspaceID")
 	userID, _ := c.Get("userID")
 
@@ -359,6 +403,76 @@ func (h *TodoHandler) CreateNote(c *gin.Context) {
 
 	h.broadcastTodo(workspaceID.(int), "note", "created", note)
 	c.JSON(http.StatusCreated, note)
+}
+
+func (h *TodoHandler) UpdateNote(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+	workspaceID, _ := c.Get("workspaceID")
+	noteID := c.Param("noteId")
+
+	var req updateNoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Title == nil && req.Content == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nothing to update"})
+		return
+	}
+
+	if req.Title != nil {
+		_, err := h.DB.Exec(
+			"UPDATE notes SET title = ? WHERE id = ? AND workspace_id = ?",
+			*req.Title, noteID, workspaceID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update note"})
+			return
+		}
+	}
+
+	if req.Content != nil {
+		_, err := h.DB.Exec(
+			"UPDATE notes SET content = ? WHERE id = ? AND workspace_id = ?",
+			*req.Content, noteID, workspaceID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update note"})
+			return
+		}
+	}
+
+	h.broadcastTodo(workspaceID.(int), "note", "updated", gin.H{"id": noteID})
+	c.JSON(http.StatusOK, gin.H{"message": "note updated"})
+}
+
+func (h *TodoHandler) DeleteNote(c *gin.Context) {
+	if !middleware.RequireManage(c, middleware.AreaPlanning) {
+		return
+	}
+	workspaceID, _ := c.Get("workspaceID")
+	noteID := c.Param("noteId")
+
+	result, err := h.DB.Exec(
+		"DELETE FROM notes WHERE id = ? AND workspace_id = ?",
+		noteID, workspaceID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete note"})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
+		return
+	}
+
+	h.broadcastTodo(workspaceID.(int), "note", "deleted", gin.H{"id": noteID})
+	c.JSON(http.StatusOK, gin.H{"message": "note deleted"})
 }
 
 func (h *TodoHandler) broadcastTodo(workspaceID int, entity, action string, payload any) {

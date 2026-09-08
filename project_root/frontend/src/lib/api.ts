@@ -1,15 +1,18 @@
 import type {
   Bill,
+  BillSeries,
   ChatConversation,
   ChatMessage,
   CreateWorkspaceResult,
   Expense,
+  EventSeries,
   FinanceSummary,
   IncomeEntry,
   Note,
   PlannerEvent,
   Todo,
   TodoList,
+  User,
   Workspace,
   WorkspaceAccessRequest,
   WorkspaceFocusArea,
@@ -19,7 +22,15 @@ import type {
 import type { OccurrenceScope } from '@/lib/recurrence'
 import { parseOccurrenceId } from '@/lib/recurrence'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+const API_URL = resolveApiUrl()
+
+function resolveApiUrl() {
+  const configured = import.meta.env.VITE_API_URL
+  if (configured == null || configured === '') {
+    return import.meta.env.DEV ? 'http://localhost:8080' : ''
+  }
+  return String(configured).replace(/\/$/, '')
+}
 
 type ApiError = { error?: string }
 
@@ -29,7 +40,9 @@ async function request<T>(
   token?: string | null,
 ): Promise<T> {
   const headers = new Headers(options.headers)
-  headers.set('Content-Type', 'application/json')
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
@@ -53,10 +66,20 @@ async function request<T>(
   return (await response.json()) as T
 }
 
-export async function register(username: string, password: string, workspaceName?: string) {
+export async function register(
+  username: string,
+  password: string,
+  workspaceName?: string,
+  email?: string,
+) {
   return request<{ token: string; username: string }>('/api/register', {
     method: 'POST',
-    body: JSON.stringify({ username, password, workspace_name: workspaceName }),
+    body: JSON.stringify({
+      username,
+      password,
+      workspace_name: workspaceName,
+      email: email || undefined,
+    }),
   })
 }
 
@@ -67,8 +90,57 @@ export async function login(username: string, password: string) {
   })
 }
 
+export async function requestPasswordReset(email: string) {
+  return request<{ message: string }>('/api/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function resetPassword(token: string, password: string) {
+  return request<{ message: string }>('/api/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  })
+}
+
 export async function fetchMe(token: string) {
-  return request<{ id: number; username: string }>('/api/me', {}, token)
+  return request<User>('/api/me', {}, token)
+}
+
+export async function updateProfileSettings(
+  token: string,
+  payload: {
+    username?: string
+    email?: string | null
+    display_name?: string | null
+    settings?: Record<string, unknown>
+  },
+) {
+  return request<User>('/api/me/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token)
+}
+
+export async function uploadAvatar(token: string, file: File) {
+  const formData = new FormData()
+  formData.append('avatar', file)
+  return request<User>('/api/me/avatar', { method: 'POST', body: formData }, token)
+}
+
+export async function deleteAvatar(token: string) {
+  return request<User>('/api/me/avatar', { method: 'DELETE' }, token)
+}
+
+export async function fetchAvatarBlob(token: string) {
+  const headers = new Headers()
+  headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${API_URL}/api/me/avatar`, { headers })
+  if (!response.ok) {
+    throw new Error('Could not load avatar')
+  }
+  return response.blob()
 }
 
 export async function fetchWorkspaces(token: string) {
@@ -90,11 +162,28 @@ export async function createWorkspace(
 export async function updateWorkspaceSettings(
   token: string,
   workspaceId: number,
+  name: string,
   focusAreas: WorkspaceFocusArea[],
 ) {
   return request<Workspace>(
     `/api/workspaces/${workspaceId}/settings`,
-    { method: 'PATCH', body: JSON.stringify({ focus_areas: focusAreas }) },
+    { method: 'PATCH', body: JSON.stringify({ name, focus_areas: focusAreas }) },
+    token,
+  )
+}
+
+export async function archiveWorkspace(token: string, workspaceId: number) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/archive`,
+    { method: 'POST' },
+    token,
+  )
+}
+
+export async function leaveWorkspace(token: string, workspaceId: number) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/members/me`,
+    { method: 'DELETE' },
     token,
   )
 }
@@ -103,6 +192,19 @@ export async function fetchWorkspaceMembers(token: string, workspaceId: number) 
   return request<{ members: WorkspaceMember[] }>(
     `/api/workspaces/${workspaceId}/members`,
     {},
+    token,
+  )
+}
+
+export async function updateWorkspaceMember(
+  token: string,
+  workspaceId: number,
+  userId: number,
+  manageAreas: WorkspaceFocusArea[],
+) {
+  return request<{ member: WorkspaceMember }>(
+    `/api/workspaces/${workspaceId}/members/${userId}`,
+    { method: 'PATCH', body: JSON.stringify({ manage_areas: manageAreas }) },
     token,
   )
 }
@@ -177,12 +279,41 @@ export async function sendChatMessage(
   workspaceId: number,
   conversationId: number,
   content: string,
+  files: File[] = [],
 ) {
-  return request<ChatMessage>(
-    `/api/workspaces/${workspaceId}/chat/conversations/${conversationId}/messages`,
-    { method: 'POST', body: JSON.stringify({ content }) },
-    token,
-  )
+  const path = `/api/workspaces/${workspaceId}/chat/conversations/${conversationId}/messages`
+  if (files.length === 0) {
+    return request<ChatMessage>(
+      path,
+      { method: 'POST', body: JSON.stringify({ content }) },
+      token,
+    )
+  }
+
+  const body = new FormData()
+  body.append('content', content)
+  for (const file of files) {
+    body.append('files', file)
+  }
+  return request<ChatMessage>(path, { method: 'POST', body }, token)
+}
+
+export function chatAttachmentUrl(workspaceId: number, attachmentId: number) {
+  return `${API_URL}/api/workspaces/${workspaceId}/chat/attachments/${attachmentId}`
+}
+
+export async function fetchChatAttachmentBlob(
+  token: string,
+  workspaceId: number,
+  attachmentId: number,
+) {
+  const response = await fetch(chatAttachmentUrl(workspaceId, attachmentId), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    throw new Error('Could not download attachment')
+  }
+  return response.blob()
 }
 
 export async function createDirectConversation(token: string, workspaceId: number, username: string) {
@@ -311,6 +442,27 @@ export async function fetchBills(token: string, workspaceId: number, start?: str
   return request<{ bills: Bill[] }>(`/api/workspaces/${workspaceId}/finance/bills${query}`, {}, token)
 }
 
+export async function fetchBillSeries(
+  token: string,
+  workspaceId: number,
+  status: 'active' | 'paid_off' | 'all' = 'active',
+) {
+  const params = new URLSearchParams({ status })
+  return request<{ bills: BillSeries[] }>(
+    `/api/workspaces/${workspaceId}/finance/bills/series?${params.toString()}`,
+    {},
+    token,
+  )
+}
+
+export async function fetchEventSeries(token: string, workspaceId: number) {
+  return request<{ events: EventSeries[] }>(
+    `/api/workspaces/${workspaceId}/events/series`,
+    {},
+    token,
+  )
+}
+
 export async function createBill(
   token: string,
   workspaceId: number,
@@ -338,6 +490,7 @@ export async function patchBillOccurrence(
     date?: string
     category?: string
     recurrence?: string
+    paid_off?: boolean
   },
 ) {
   const { occurrenceAt } = parseOccurrenceId(bill.occurrence_id)
@@ -604,8 +757,37 @@ export async function createNote(
   )
 }
 
+export async function updateNote(
+  token: string,
+  workspaceId: number,
+  noteId: number,
+  payload: { title?: string; content?: string },
+) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/notes/${noteId}`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    token,
+  )
+}
+
+export async function deleteNote(token: string, workspaceId: number, noteId: number) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/notes/${noteId}`,
+    { method: 'DELETE' },
+    token,
+  )
+}
+
+export async function deleteTodo(token: string, workspaceId: number, todoId: number) {
+  return request<{ message: string }>(
+    `/api/workspaces/${workspaceId}/todos/${todoId}`,
+    { method: 'DELETE' },
+    token,
+  )
+}
+
 export function getWebSocketUrl(token: string, workspaceId: number) {
-  const apiUrl = new URL(API_URL)
+  const apiUrl = new URL(API_URL || window.location.origin)
   apiUrl.protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
   apiUrl.pathname = '/ws'
   apiUrl.search = `token=${encodeURIComponent(token)}&workspace_id=${workspaceId}`

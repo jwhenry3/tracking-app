@@ -1,6 +1,7 @@
 import { CircleDollarSign, Pencil } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ManageActions } from '@/lib/workspacePermissions'
 import type { Bill } from '@/lib/types'
 
 type BillEntryActionsProps = {
@@ -11,6 +12,7 @@ type BillEntryActionsProps = {
 
 export function BillEntryActions({ bill, onPay, onEdit }: BillEntryActionsProps) {
   return (
+    <ManageActions area="finances">
     <div className="flex shrink-0 gap-0.5">
       <Button
         type="button"
@@ -35,5 +37,6 @@ export function BillEntryActions({ bill, onPay, onEdit }: BillEntryActionsProps)
         <Pencil className="h-4 w-4" />
       </Button>
     </div>
+    </ManageActions>
   )
 }

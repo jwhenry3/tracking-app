@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { X, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -49,7 +49,7 @@ export function OperationDialog({
 }
 
 type OpsTabsProps = {
-  tabs: Array<{ id: string; label: string }>
+  tabs: Array<{ id: string; label: string; icon?: LucideIcon }>
   activeTab: string
   onChange: (tabId: string) => void
 }
@@ -57,21 +57,25 @@ type OpsTabsProps = {
 export function OpsTabs({ tabs, activeTab, onChange }: OpsTabsProps) {
   return (
     <div className="mb-4 flex flex-wrap gap-2">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-sm transition',
-            activeTab === tab.id
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const Icon = tab.icon
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition',
+              activeTab === tab.id
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+            {tab.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

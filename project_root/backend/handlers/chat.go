@@ -13,8 +13,9 @@ import (
 )
 
 type ChatHandler struct {
-	DB  *sql.DB
-	Hub *hub.Hub
+	DB        *sql.DB
+	Hub       *hub.Hub
+	UploadDir string
 }
 
 type conversationResponse struct {
@@ -25,17 +26,26 @@ type conversationResponse struct {
 	Members     []string `json:"members,omitempty"`
 }
 
+type attachmentResponse struct {
+	ID           int    `json:"id"`
+	MessageID    int    `json:"message_id"`
+	OriginalName string `json:"original_name"`
+	MimeType     string `json:"mime_type"`
+	SizeBytes    int64  `json:"size_bytes"`
+}
+
 type messageResponse struct {
-	ID             int    `json:"id"`
-	ConversationID int    `json:"conversation_id"`
-	SenderID       int    `json:"sender_id"`
-	SenderUsername string `json:"sender_username"`
-	Content        string `json:"content"`
-	CreatedAt      string `json:"created_at"`
+	ID             int                  `json:"id"`
+	ConversationID int                  `json:"conversation_id"`
+	SenderID       int                  `json:"sender_id"`
+	SenderUsername string               `json:"sender_username"`
+	Content        string               `json:"content"`
+	CreatedAt      string               `json:"created_at"`
+	Attachments    []attachmentResponse `json:"attachments"`
 }
 
 type sendMessageRequest struct {
-	Content string `json:"content" binding:"required,min=1"`
+	Content string `json:"content"`
 }
 
 type directConversationRequest struct {
@@ -118,7 +128,12 @@ func (h *ChatHandler) ListMessages(c *gin.Context) {
 			return
 		}
 		msg.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+		msg.Attachments = []attachmentResponse{}
 		messages = append(messages, msg)
+	}
+	if err := attachMessageAttachments(h.DB, messages); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load attachments"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"messages": messages})
@@ -138,15 +153,26 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	var req sendMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	content, files, err := parseSendMessage(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if content == "" && len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message content or attachment required"})
+		return
+	}
 
-	result, err := h.DB.Exec(
+	tx, err := h.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not send message"})
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(
 		`INSERT INTO chat_messages (conversation_id, sender_id, content) VALUES (?, ?, ?)`,
-		conversationID, userID, req.Content,
+		conversationID, userID, content,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not send message"})
@@ -154,6 +180,19 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	}
 
 	id64, _ := result.LastInsertId()
+	written, err := h.storeAttachments(tx, int(id64), workspaceID.(int), files)
+	if err != nil {
+		removeFiles(written)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		removeFiles(written)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not send message"})
+		return
+	}
+
 	msg, err := loadMessageByID(h.DB, int(id64))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load saved message"})
@@ -291,17 +330,27 @@ func AddUserToWorkspaceChats(db *sql.DB, workspaceID, userID int) error {
 	return nil
 }
 
+func RemoveUserFromWorkspaceChats(db *sql.DB, workspaceID, userID int) error {
+	_, err := db.Exec(`
+		DELETE FROM chat_conversation_members
+		WHERE user_id = ? AND conversation_id IN (
+			SELECT id FROM chat_conversations WHERE workspace_id = ?
+		)`, userID, workspaceID)
+	return err
+}
+
 func findDirectConversation(db *sql.DB, workspaceID, userA, userB int) (int, error) {
 	if userA == userB {
 		var conversationID int
 		err := db.QueryRow(`
 			SELECT c.id
 			FROM chat_conversations c
-			INNER JOIN chat_conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+			INNER JOIN chat_conversation_members cm ON cm.conversation_id = c.id
 			WHERE c.workspace_id = ? AND c.kind = 'direct'
 			GROUP BY c.id
-			HAVING COUNT(cm.user_id) = 1
-			LIMIT 1`, userA, workspaceID,
+			HAVING COUNT(DISTINCT cm.user_id) = 1
+				AND SUM(CASE WHEN cm.user_id = ? THEN 1 ELSE 0 END) = 1
+			LIMIT 1`, workspaceID, userA,
 		).Scan(&conversationID)
 		if err == sql.ErrNoRows {
 			return 0, nil
@@ -339,7 +388,12 @@ func loadMessageByID(db *sql.DB, messageID int) (messageResponse, error) {
 		return messageResponse{}, err
 	}
 	msg.CreatedAt = createdAt.UTC().Format(time.RFC3339)
-	return msg, nil
+	msg.Attachments = []attachmentResponse{}
+	messages := []messageResponse{msg}
+	if err := attachMessageAttachments(db, messages); err != nil {
+		return messageResponse{}, err
+	}
+	return messages[0], nil
 }
 
 func createDirectConversation(db *sql.DB, workspaceID, userA, userB int) (int, error) {

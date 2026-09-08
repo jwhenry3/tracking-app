@@ -2,6 +2,7 @@ import { EntryActionButtons } from '@/components/ops/EntryActionButtons'
 import { BillEntryActions } from '@/components/finance/BillEntryActions'
 import { ExpenseEntryActions } from '@/components/finance/ExpenseEntryActions'
 import type { EditableEntry } from '@/components/ops/EditEntryForm'
+import { EntryTypeIcon } from '@/components/ops/EntryTypeIcon'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -20,6 +21,7 @@ import {
 import { describeRecurrence } from '@/lib/recurrence'
 import type { Bill, Expense, IncomeEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { ManageActions } from '@/lib/workspacePermissions'
 
 type UntilNextIncomeViewProps = {
   income: IncomeEntry[]
@@ -33,7 +35,7 @@ type UntilNextIncomeViewProps = {
 type RunwayListItem = {
   id: string
   sortDate: string
-  typeLabel: 'Bill' | 'Expense'
+  kind: 'bill' | 'expense'
   title: string
   meta: string
   badge?: string
@@ -53,7 +55,7 @@ export function UntilNextIncomeView({ income, bills, expenses, onEdit, onPay, on
     ...snapshot.bills.map((bill) => ({
       id: bill.occurrence_id,
       sortDate: normalizeFinanceDate(bill.due_date),
-      typeLabel: 'Bill' as const,
+      kind: 'bill' as const,
       title: bill.title,
       meta: `${money(bill.amount)} · ${formatDayLabel(bill.due_date)}`,
       badge: bill.is_recurring ? 'Recurring' : undefined,
@@ -66,7 +68,7 @@ export function UntilNextIncomeView({ income, bills, expenses, onEdit, onPay, on
     ...snapshot.expenses.map((expense) => ({
       id: `expense-${expense.id}`,
       sortDate: normalizeFinanceDate(expense.expense_date),
-      typeLabel: 'Expense' as const,
+      kind: 'expense' as const,
       title: expense.title,
       meta: `${money(expense.amount)} · ${formatDayLabel(expense.expense_date)}`,
       pastDue: isPastDueExpense(expense),
@@ -100,7 +102,9 @@ export function UntilNextIncomeView({ income, bills, expenses, onEdit, onPay, on
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-3xl font-semibold text-[#15803d]">{money(snapshot.nextIncome.amount)}</p>
-                  <EntryActionButtons onEdit={() => onEdit({ kind: 'income', data: snapshot.nextIncome! })} />
+                  <ManageActions area="finances">
+                    <EntryActionButtons onEdit={() => onEdit({ kind: 'income', data: snapshot.nextIncome! })} />
+                  </ManageActions>
                 </div>
               </div>
               {snapshot.lastIncome ? (
@@ -189,7 +193,7 @@ function RunwayListCard({
             <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border p-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={typeBadgeClass}>{item.typeLabel}</Badge>
+                  <EntryTypeIcon kind={item.kind} />
                   <p className="font-medium">{item.title}</p>
                   {item.pastDue ? <Badge className={pastDueBadgeClass}>Past due</Badge> : null}
                   {item.dueSoon ? <Badge className={dueSoonBadgeClass}>Due soon</Badge> : null}
@@ -202,7 +206,9 @@ function RunwayListCard({
               ) : item.expense && item.onPayExpense ? (
                 <ExpenseEntryActions expense={item.expense} onPay={item.onPayExpense} onEdit={item.onEdit} />
               ) : (
-                <EntryActionButtons onEdit={item.onEdit} />
+                <ManageActions area="finances">
+                  <EntryActionButtons onEdit={item.onEdit} />
+                </ManageActions>
               )}
             </div>
           ))
